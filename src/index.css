@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
+}
+
+/* Base styles for PDF pages - visible in browser */
+.pdf-page {
+  position: relative;
+  width: 210mm;
+  min-height: 297mm;
+  background: white;
+  margin: 20px auto;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+  display: flex !important;
+  flex-direction: column !important;
+  box-sizing: border-box;
+}
+
+@media print {
+
+  /* High-Res Report Mode: Only show the pro container */
+  body.printing-pro-report #root {
+    display: none !important;
+  }
+
+  body.printing-pro-report #hidden-report-container {
+    position: static !important;
+    display: block !important;
+    left: auto !important;
+    top: auto !important;
+    width: 210mm !important;
+    background: white !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  body.printing-pro-report .pdf-page-fixed {
+    width: 210mm !important;
+    height: 297mm !important;
+    page-break-after: always !important;
+    page-break-inside: avoid !important;
+    margin: 0 !important;
+    padding: 20mm !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: white !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Regular UI hiding */
+  .print\:hidden,
+  nav,
+  header:not(.pdf-page header),
+  footer:not(.pdf-page footer),
+  aside,
+  button:not(.pdf-page button) {
+    display: none !important;
+  }
+
+  body,
+  html {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 0;
+  }
+}
