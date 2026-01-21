@@ -1,100 +1,85 @@
 export const PANEL_WIDTH = 1.22; // Standard SIP panel width
 export const PANEL_HEIGHT = 2.44; // Standard
 
-export const calculateGeometry = (dimensions, interiorWalls, facadeConfigs, openings = [], project = {}) => {
+export const calculateGeometry = (dimensions, interiorWalls, facadeConfigs, openings = [], project = {}, selections = {}) => {
     const { width, length } = dimensions;
     const recesses = project.recesses || [];
 
     // 1. Interior Walls Length
-    const interiorWallsLength = Array.isArray(interiorWalls)
-        ? interiorWalls.reduce((acc, wall) => acc + wall.length, 0)
-        : (Number(interiorWalls) || 0);
+    const interiorWallsLength = selections.includeInterior !== false ? (
+        Array.isArray(interiorWalls)
+            ? interiorWalls.reduce((acc, wall) => acc + wall.length, 0)
+            : (Number(interiorWalls) || 0)
+    ) : 0;
 
     // 2. Facade-based Area Calculation (Gross Exterior)
-    // 2. Facade-based Area Calculation (Gross Exterior) - STRICT USER LOGIC
-    // Formula: Area_Muros_Bruta = Suma(Area_Norte + Area_Sur + Area_Este + Area_Oeste)
     let areaFachadas = 0;
     let maxH = 2.44;
 
     Object.entries(facadeConfigs).forEach(([side, config]) => {
         const isFB = side === 'Norte' || side === 'Sur';
         const w = isFB ? width : length;
-        const { type, hBase, hMax } = config;
-
+        const { hBase, hMax } = config;
         if (hMax > maxH) maxH = hMax;
-
-        // Regla de la Altura Promedio: (Base + Cumbrera) / 2
         const hPromedio = (hBase + hMax) / 2;
-        const areaFachada = w * hPromedio;
-
-        areaFachadas += areaFachada;
+        areaFachadas += w * hPromedio;
     });
 
-    // Adjust for Recesses (Corrección: Solo sumar los laterales del recess)
-    // El ancho (width) del recess ya está contado en el largo total de la fachada (w).
-    // Solo agregamos la superficie "extra" generada por la profundidad (2 muros laterales).
+    // Adjust for Recesses
     let recessPisoArea = 0;
     let recessExtraWallArea = 0;
     let extraLineal = 0;
 
     recesses.forEach(r => {
         recessPisoArea += r.width * r.depth;
-
-        // Use custom height if available, otherwise fallback to side config average
         const sideConfig = facadeConfigs[r.side];
         const h = r.height || (sideConfig ? (sideConfig.hBase + sideConfig.hMax) / 2 : 2.44);
-
-        // Extra Wall Area = 2 * depth * height (Side walls of the recess)
         recessExtraWallArea += (2 * r.depth) * h;
-
         extraLineal += 2 * r.depth;
     });
 
     const perimExt = (width + length) * 2 + extraLineal;
     const areaPiso = Math.max(0, (width * length) - recessPisoArea);
 
-    // Total Area Bruta = Suma Fachadas + Extras por Recess (Physics correction)
-    let areaMurosExtBruta = areaFachadas + recessExtraWallArea;
+    // Total Area Bruta
+    let areaMurosExtBruta = selections.includeExterior !== false ? (areaFachadas + recessExtraWallArea) : 0;
 
     // 3. Openings Analysis
-    const totalAberturasCount = openings.length;
-
-    // Perimetro total = suma de los 4 lados de cada abertura (2*ancho + 2*alto)
-    const perimAberturas = openings.reduce((acc, o) => {
+    const totalAberturasCount = (selections.includeExterior !== false || selections.includeInterior !== false) ? openings.length : 0;
+    const perimAberturas = (selections.includeExterior !== false || selections.includeInterior !== false) ? openings.reduce((acc, o) => {
         const w = Number(o.width) || (o.type === 'door' ? 0.9 : 1.2);
         const h = Number(o.height) || (o.type === 'door' ? 2.1 : 1.2);
         return acc + ((w + h) * 2);
-    }, 0);
+    }, 0) : 0;
 
-    const areaAberturas = openings.reduce((acc, o) => {
+    const areaAberturas = (selections.includeExterior !== false || selections.includeInterior !== false) ? openings.reduce((acc, o) => {
         const w = Number(o.width) || (o.type === 'door' ? 0.9 : 1.2);
         const h = Number(o.height) || (o.type === 'door' ? 2.1 : 1.2);
         return acc + (w * h);
-    }, 0);
+    }, 0) : 0;
 
     // 4. Roof Area estimation
     const hasGable = Object.values(facadeConfigs).some(c => c.type === '2-aguas');
     const hasSlope = Object.values(facadeConfigs).some(c => c.type === 'inclinado');
-
     let slopeFactor = 1.05;
     if (hasGable) slopeFactor = 1.25;
     else if (hasSlope) slopeFactor = 1.15;
 
-    const areaTecho = areaPiso * slopeFactor;
+    const areaTecho = (selections.includeRoof !== false) ? (areaPiso * slopeFactor) : 0;
 
     // 5. Walls Area (Net)
     const areaMurosExtNeta = Math.max(0, areaMurosExtBruta - areaAberturas);
 
     // 6. Panels Calculation
-    const cantMurosExt = Math.ceil(areaMurosExtBruta / (PANEL_WIDTH * PANEL_HEIGHT));
-    const cantMurosInt = Math.ceil((interiorWallsLength * 2.44) / (PANEL_WIDTH * PANEL_HEIGHT));
-    const cantPiso = Math.ceil(areaPiso / (PANEL_WIDTH * PANEL_HEIGHT));
-    const cantTecho = Math.ceil(areaTecho / (PANEL_WIDTH * PANEL_HEIGHT));
+    const cantMurosExt = selections.includeExterior !== false ? Math.ceil(areaMurosExtBruta / (PANEL_WIDTH * PANEL_HEIGHT)) : 0;
+    const cantMurosInt = selections.includeInterior !== false ? Math.ceil((interiorWallsLength * 2.44) / (PANEL_WIDTH * PANEL_HEIGHT)) : 0;
+    const cantPiso = selections.includeFloor !== false ? Math.ceil(areaPiso / (PANEL_WIDTH * PANEL_HEIGHT)) : 0;
+    const cantTecho = selections.includeRoof !== false ? Math.ceil(areaTecho / (PANEL_WIDTH * PANEL_HEIGHT)) : 0;
 
     const totalPaneles = cantMurosExt + cantMurosInt + cantPiso + cantTecho;
 
-    // Perímetro Lineal de Paneles: All walls perimeter + vertical joints estimation
-    const perimLinealPaneles = (perimExt + interiorWallsLength) + (totalPaneles * 2.44 / 2);
+    // Perímetro Lineal de Paneles (USER FORMULA): Panel Count * 7.32 ML
+    const perimLinealPaneles = totalPaneles * 7.32;
 
     // Detail per Facade for Reporting
     const facadeDetails = {};
@@ -103,7 +88,7 @@ export const calculateGeometry = (dimensions, interiorWalls, facadeConfigs, open
         const w = isFB ? width : length;
         const { hBase, hMax } = config;
         const hPromedio = (hBase + hMax) / 2;
-        facadeDetails[side] = w * hPromedio;
+        facadeDetails[side] = selections.includeExterior !== false ? (w * hPromedio) : 0;
     });
 
     return {
@@ -121,105 +106,141 @@ export const calculateGeometry = (dimensions, interiorWalls, facadeConfigs, open
         perimAberturas,
         perimLinealPaneles,
         totalAberturasCount,
-        facadeDetails // New detailed breakdown
+        facadeDetails
     };
 };
 
-export const calculateQuantities = (geo, selections, openingsCount, prices, dimensions = {}) => {
+export const calculateQuantities = (geo, selections, openingsCount, prices, dimensions = {}, foundationType = 'platea', structureType = 'madera') => {
     const {
         perimExt, areaPiso, areaTecho, cantMurosExt, cantMurosInt,
         cantPiso, cantTecho, totalPaneles, tabiques, areaMurosBruta,
-        totalAberturasCount, perimAberturas
+        totalAberturasCount, perimAberturas, perimLinealPaneles
     } = geo;
 
     const { width = 0, length = 0 } = dimensions;
-    const countAberturas = totalAberturasCount !== undefined ? totalAberturasCount : openingsCount;
     const quantities = {};
 
-    // --- 1. PANELES ---
-    if (selections.exteriorWallId) quantities[selections.exteriorWallId] = cantMurosExt;
-    if (selections.interiorWallId) quantities[selections.interiorWallId] = cantMurosInt;
-    if (selections.floorId) quantities[selections.floorId] = cantPiso;
-    if (selections.roofId) quantities[selections.roofId] = cantTecho;
+    const includeExt = selections.includeExterior !== false;
+    const includeInt = selections.includeInterior !== false;
+    const includeFloor = selections.includeFloor !== false;
+    const includeRoof = selections.includeRoof !== false;
+    const includeAnyWall = includeExt || includeInt;
 
-    const extPanelId = selections.exteriorWallId || "";
-    const is100mm = extPanelId.includes('100');
+    // --- 1. SISTEMA SIP ---
+    if (selections.exteriorWallId && includeExt) quantities[selections.exteriorWallId] = cantMurosExt;
+    if (selections.interiorWallId && includeInt) quantities[selections.interiorWallId] = cantMurosInt;
 
-    // --- 2. MADERAS ---
-    // Maderas Vinculantes y Soleras (Lógica Condicional por espesor)
-    const perimTab = perimExt + tabiques;
-    const pAberturas = perimAberturas || 0;
-
-    if (!is100mm) {
-        // MAD_VINC_2X3 = (Perim_Ext + Tabiques) * 6 + Perimetro_Aberturas
-        quantities['MAD_VINC_2X3'] = Math.ceil(perimTab * 6 + pAberturas);
-        // MAD_SOL_BASE (1x4) = Perim_Ext + Tabiques
-        quantities['MAD_SOL_BASE'] = Math.ceil(perimTab);
-    } else {
-        // MAD_VINC_2X4 = (Perim_Ext + Tabiques) * 6 + Perimetro_Aberturas
-        quantities['MAD_VINC_2X4'] = Math.ceil(perimTab * 6 + pAberturas);
-        // MAD_SOL_1X5 = Perim_Ext + Tabiques
-        quantities['MAD_SOL_1X5'] = Math.ceil(perimTab);
+    // Panel de Piso: Solo en Estruc. Madera/Metal
+    if (foundationType !== 'platea' && includeFloor) {
+        if (selections.floorId) quantities[selections.floorId] = cantPiso;
     }
 
-    // MAD_CLAV_2X2 = Perim_Ext * 5
-    const metrosClavadera = perimExt * 5;
-    quantities['MAD_CLAV_2X2'] = Math.ceil(metrosClavadera);
+    if (selections.roofId && includeRoof) quantities[selections.roofId] = cantTecho;
 
-    // MAD_VIGA_3X6 = ((Largo / 0.6) * Ancho) * 1.2
-    const vigaQty = ((length / 0.6) * width) * 1.2;
-    quantities['MAD_VIGA_3X6'] = Math.ceil(vigaQty);
+    // --- 2. MADERAS ESTRUCTURALES ---
+    // Pino 3x6" (Techo): ((Largo / 0.6) * Ancho) * 1.2
+    const vigaTechoML = includeRoof ? ((length / 0.6) * width) * 1.2 : 0;
+    // Pino 3x6" (Piso): Superficie x 2.5 (Solo Madera/Metal)
+    const vigaPisoML = (foundationType !== 'platea' && includeFloor) ? (areaPiso * 2.5) : 0;
+    quantities['MAD_VIGA_3X6'] = Math.ceil(vigaTechoML + vigaPisoML);
 
-    // --- 3. FIJACIONES ---
-    // FIX_6X1_5 = (Total_Paneles * 50) + (Total_Aberturas * 12)
-    quantities['FIX_6X1_5'] = Math.ceil((totalPaneles * 50) + (countAberturas * 12));
+    // Pino 2x3" (Vinculante): (Paneles Muro x 6) + Perim. Aberturas
+    const cantPanelesMuro = (includeExt ? cantMurosExt : 0) + (includeInt ? cantMurosInt : 0);
+    quantities['MAD_VINC_2X3'] = Math.ceil((cantPanelesMuro * 6) + (includeAnyWall ? perimAberturas : 0));
 
-    // FIX_6X2 (Pie Solera) = (Perim_Ext + Tabiques) * 4
-    quantities['FIX_6X2'] = Math.ceil(perimTab * 4);
+    // Pino 1x4" (Solera): Perim. Casa + ML Tabiques Int.
+    const soleraML = (includeExt ? perimExt : 0) + (includeInt ? tabiques : 0);
+    quantities['MAD_SOL_BASE'] = Math.ceil(soleraML);
 
-    // FIX_8X3 (Clavaderas) = Metros_Clavadera * 2
-    quantities['FIX_8X3'] = Math.ceil(metrosClavadera * 2);
+    // Pino 2x2" (Clavadera): (Perim. Casa x 5) + (Sup. Casa x 2)
+    const clavExt = includeExt ? (perimExt * 5) : 0;
+    const clavPiso = includeFloor ? (areaPiso * 2) : 0;
+    quantities['MAD_CLAV_2X2'] = Math.ceil(clavExt + clavPiso);
 
-    // TORX_120 (Muros) = Cant_Muros * 3
-    const cantMurosTotal = cantMurosExt + cantMurosInt;
-    quantities['TORX_120'] = Math.ceil(cantMurosTotal * 3);
+    // --- 3. FIJACIONES Y ANCLAJES ---
+    // Fix Negro (ml madera x 6) - Dividido 100 porque se vende por 100 UNID
+    // Lógica de Techo Sandwich: Eliminar Clavaderas y Fix 8x3
+    const isTechoSandwich = includeRoof && selections.roofId && (
+        selections.roofId.includes('COL-') ||
+        selections.roofId.includes('SID-') ||
+        selections.roofId.includes('CE-') ||
+        selections.roofId.includes('OSB-FEN')
+    );
 
-    // TORX_140 (Vigas) = (Area_Techo + Area_Piso) * 3
-    quantities['TORX_140'] = Math.ceil((areaTecho + areaPiso) * 3);
+    quantities['FIX_6X1_5'] = Math.ceil(((quantities['MAD_VINC_2X3'] || 0) * 6) / 100);
+    quantities['FIX_6X2'] = Math.ceil(((quantities['MAD_SOL_BASE'] || 0) * 6) / 100);
 
-    // VARILLA_12 (Anclaje) = (Perim_Ext + Tabiques) / 5
-    const cantVarillas = perimTab / 5;
-    quantities['VARILLA_12'] = Math.ceil(cantVarillas);
+    if (isTechoSandwich) {
+        // If it's sandwich roof, we remove the clavaderas that might have been added for the roof part
+        quantities['MAD_CLAV_2X2'] = Math.ceil(clavExt); // Keep only exterior wall part if any
+        quantities['FIX_8X3'] = Math.ceil(((quantities['MAD_CLAV_2X2'] || 0) * 6) / 100);
+        quantities['TORN_HEX_3'] = Math.ceil(areaTecho * 4);
+    } else {
+        quantities['FIX_8X3'] = Math.ceil(((quantities['MAD_CLAV_2X2'] || 0) * 6) / 100);
+        quantities['TORN_HEX_3'] = 0;
+    }
 
-    // KIT_TUERCA = Cant_Varillas * 10
-    quantities['KIT_TUERCA'] = Math.ceil(cantVarillas * 10);
+    // Torx 120mm (Muros)
+    quantities['TORX_120'] = Math.ceil(cantPanelesMuro * 3);
 
-    // TORN_HEX_3 (Techo) = Area_Techo * 4
-    quantities['TORN_HEX_3'] = Math.ceil(areaTecho * 4);
+    // Torx 160mm (Vigas Techo)
+    quantities['TORX_160'] = includeRoof ? Math.ceil(vigaTechoML * 2) : 0;
 
-    // --- 4. QUIMICOS Y AISLACION ---
-    // PEG_PU = Total_Paneles / 4
-    quantities['PEG_PU'] = Math.ceil(totalPaneles / 4);
+    // HBS Torx 180 (Piso Madera)
+    if (structureType === 'madera' && foundationType !== 'platea' && includeFloor) {
+        quantities['HBS_TORX_180'] = Math.ceil(areaPiso * 4);
+    }
 
-    // ESPUMA_PU = (Total_Paneles * 7.32) / 25
-    quantities['ESPUMA_PU'] = Math.ceil((totalPaneles * 7.32) / 25);
+    // Hexagonal 14x5" (Piso Metal)
+    if (structureType === 'metal' && includeFloor) {
+        quantities['HEX_T2_14X5'] = Math.ceil(areaPiso * 4);
+    }
 
-    // MEMB_LIQ = Area_Piso / 15
-    quantities['MEMB_LIQ'] = Math.ceil(areaPiso / 15);
+    // Kit de Anclaje (Puntos de anclaje cada 1m)
+    const puntosAnclaje = Math.ceil(soleraML);
 
-    // MEMB_AUTO = Perim_Ext + Tabiques
-    quantities['MEMB_AUTO'] = Math.ceil(perimTab);
+    // Varilla 1/2": Platea y Madera
+    if ((foundationType === 'platea' || structureType === 'madera') && includeAnyWall) {
+        quantities['VARILLA_12'] = Math.ceil(puntosAnclaje / 5);
+        quantities['KIT_TUERCA'] = Math.ceil(puntosAnclaje / 10); // Pack de 10
+    }
 
-    // BARRERA (Wichi) = (Area_Muros_Ext + Area_Techo) * 1.1
-    quantities['BARRERA'] = Math.ceil((areaMurosBruta + areaTecho) * 1.1);
+    // Anclaje Químico: Solo Platea
+    if (foundationType === 'platea' && includeAnyWall) {
+        quantities['ANCLAJE_QUIMICO'] = Math.ceil(puntosAnclaje / 8);
+    }
+
+    // --- 4. AISLACIÓN Y SELLADO QUÍMICO ---
+    const perimTotalSellado = perimLinealPaneles + (includeAnyWall ? perimAberturas : 0);
+
+    // Pegamento PU (500gr): (Perim Paneles + Aberturas) x 25g / 500g
+    quantities['PEG_PU'] = Math.ceil((perimTotalSellado * 25) / 500);
+
+    // Espuma PU (750cc): (Perim Paneles + Aberturas) / 25
+    quantities['ESPUMA_PU'] = Math.ceil(perimTotalSellado / 25);
+
+    // Membrana Líquida: Sup Piso / 40 (Solo Madera/Metal)
+    if (foundationType !== 'platea' && includeFloor) {
+        quantities['MEMB_LIQ'] = Math.ceil(areaPiso / 40);
+    }
+
+    // Membrana Autoadhesiva: Rollo 10m
+    quantities['MEMB_AUTO'] = includeExt ? Math.ceil(perimExt / 10) : 0;
+
+    // Barrera Wichi: (Sup Muros + Techo) / 30
+    const barreraMuros = includeExt ? areaMurosBruta : 0;
+    const barreraTecho = includeRoof ? areaTecho : 0;
+    quantities['BARRERA'] = Math.ceil((barreraMuros + barreraTecho) / 30);
 
     return quantities;
 };
 
-export const fullCalculation = (dimensions, selections, interiorWalls, openings, facadeConfigs, project = {}) => {
+export const fullCalculation = (dimensions, selections, interiorWalls, openings, facadeConfigs, project = {}, foundationType = 'platea', structureType = 'madera', prices = []) => {
     const actualOpenings = Array.isArray(openings) ? openings : [];
-    const geo = calculateGeometry(dimensions, interiorWalls, facadeConfigs, actualOpenings, project);
-    const q = calculateQuantities(geo, selections, actualOpenings.length, [], dimensions);
+    const safeSelections = selections || {};
+    const geo = calculateGeometry(dimensions, interiorWalls, facadeConfigs, actualOpenings, project, safeSelections);
+    const q = calculateQuantities(geo, safeSelections, actualOpenings.length, prices, dimensions, foundationType, structureType);
+
 
     // Safety check for NaN values in geo and quantities
     [geo, q].forEach(obj => {

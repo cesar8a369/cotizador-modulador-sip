@@ -109,6 +109,13 @@ const FacadeView = ({ type, data, scale = 20, onMaximize, isMaximized = false })
 
     const wallPointsString = points.map(p => `${p[0]},${viewHeight - p[1]}`).join(' ');
 
+    // --- CALCULATIONS FOR UI ---
+    const hAverage = (h1 + h2) / 2;
+    const wallArea = wallWidth * hAverage;
+    const PANEL_SURFACE = 1.22 * 2.44;
+    const panelCount = Math.ceil(wallArea / PANEL_SURFACE);
+    const panelPerimeter = panelCount * 7.32;
+
     return (
         <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col h-full relative group" style={{ minHeight: '300px' }}>
             <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
@@ -119,6 +126,24 @@ const FacadeView = ({ type, data, scale = 20, onMaximize, isMaximized = false })
                 </div>
                 <div className="bg-cyan-500/10 text-cyan-600 text-[8px] font-black uppercase px-2 py-0.5 rounded border border-cyan-500/20 w-fit">
                     Vista Exterior
+                </div>
+            </div>
+
+            {/* NEW TECH DATA OVERLAY */}
+            <div className="absolute bottom-2 left-2 z-10 flex flex-col gap-0.5">
+                <div className="bg-slate-900/90 backdrop-blur px-2 py-1 rounded text-[7px] font-black text-cyan-400 border border-white/10 flex flex-col gap-0.5 shadow-xl">
+                    <div className="flex justify-between gap-4">
+                        <span className="text-white/40 uppercase tracking-tighter">ÁREA TOTAL:</span>
+                        <span className="text-white">{wallArea.toFixed(2)} m²</span>
+                    </div>
+                    <div className="flex justify-between gap-4">
+                        <span className="text-white/40 uppercase tracking-tighter">CANT. PANELES:</span>
+                        <span className="text-white">{panelCount} u.</span>
+                    </div>
+                    <div className="flex justify-between gap-4 border-t border-white/5 pt-0.5 mt-0.5 font-bold">
+                        <span className="text-cyan-500/60 uppercase tracking-tighter">PERÍM. PANELES:</span>
+                        <span className="text-cyan-400">{panelPerimeter.toFixed(2)} ml</span>
+                    </div>
                 </div>
             </div>
 
@@ -175,8 +200,9 @@ const FacadeView = ({ type, data, scale = 20, onMaximize, isMaximized = false })
                             {!data.isPrint && (
                                 <>
                                     <g className="opacity-0 group-hover/opening:opacity-100 transition-opacity pointer-events-none">
-                                        <rect x={0} y={-20} width={60} height={16} fill="#0ea5e9" rx="4" />
-                                        <text x={30} y={-8} className="text-[9px] fill-white font-bold" textAnchor="middle">{o.width.toFixed(2)}x{o.height.toFixed(2)}</text>
+                                        <rect x={0} y={-35} width={70} height={30} fill="#0ea5e9" rx="6" />
+                                        <text x={35} y={-22} className="text-[8px] fill-white font-black" textAnchor="middle">{o.width.toFixed(2)}x{o.height.toFixed(2)} m</text>
+                                        <text x={35} y={-10} className="text-[7px] fill-cyan-100 font-bold" textAnchor="middle">PERÍM: {((o.width + o.height) * 2).toFixed(2)} ml</text>
                                     </g>
                                     <circle cx={o.width * scale} cy={0} r={6} fill="white" stroke="#0ea5e9" strokeWidth="2" className="opacity-0 group-hover/opening:opacity-100 cursor-ne-resize" onMouseDown={(e) => { e.stopPropagation(); setActiveOpeningId(o.id); setInteraction('resize'); }} />
                                     <g className="opacity-0 group-hover/opening:opacity-100 cursor-pointer" transform={`translate(${o.width * scale + 10}, ${o.height * scale})`} onMouseDown={(e) => { e.stopPropagation(); removeOpening(o.id); }}>

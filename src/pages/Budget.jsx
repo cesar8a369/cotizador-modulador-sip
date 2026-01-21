@@ -1,8 +1,9 @@
 import React, { useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import { fullCalculation } from '../utils/calculations';
-import { User, Phone, Mail, MapPin, Calendar, Home, Download, CheckCircle, Clock, Percent, AlertCircle, X } from 'lucide-react';
+import { User, Phone, Mail, MapPin, Calendar, Home, Download, CheckCircle, Clock, Percent, AlertCircle, X, FileText } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { INITIAL_PRICES } from '../data/constants';
 
 const formatCurrency = (value) => {
     return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value);
@@ -12,50 +13,53 @@ const Budget = () => {
     const {
         dimensions, selections, interiorWalls, openings, facadeConfigs,
         prices, project, setProjectData, saveToCRM, updateProjectInfo,
-        setOverride, removeOverride
+        setOverride, removeOverride, foundationType, structureType, defaults
     } = useStore();
     const [isSaved, setIsSaved] = React.useState(false);
     const navigate = useNavigate();
 
-    const { geo, quantities } = useMemo(() =>
-        fullCalculation(dimensions, selections, interiorWalls, openings, facadeConfigs, project),
-        [dimensions, selections, interiorWalls, openings, facadeConfigs, project]
+    const { geo = {}, quantities = {} } = useMemo(() =>
+        fullCalculation(dimensions, selections, interiorWalls, openings, facadeConfigs, project, foundationType, structureType, prices),
+        [dimensions, selections, interiorWalls, openings, facadeConfigs, project, foundationType, structureType, prices]
     );
 
-    const adjustmentPercentage = project.projectInfo?.adjustmentPercentage || 0;
+    const adjustmentPercentage = project?.projectInfo?.adjustmentPercentage || 0;
     const markupMultiplier = adjustmentPercentage > 0 ? (1 + adjustmentPercentage / 100) : 1;
     const discountFactor = adjustmentPercentage < 0 ? (1 + adjustmentPercentage / 100) : 1;
 
     const budgetItems = useMemo(() => {
         const items = [];
-        // Combine calculated quantities with overrides
         const allProductIds = new Set([...Object.keys(quantities), ...Object.keys(project.overrides || {})]);
 
         allProductIds.forEach(id => {
-            const product = prices.find(p => p.id === id);
-            if (!product) return;
+            // Priority: INITIAL_PRICES for metadata (name, category, unit) to ensure UI consistency
+            const latestProduct = INITIAL_PRICES.find(p => p.id === id);
+            // State prices for current session values
+            const stateProduct = prices.find(p => p.id === id);
 
+            if (!latestProduct && !stateProduct) return;
+
+            const product = latestProduct || stateProduct;
             const override = project.overrides?.[id];
             const qty = override?.qty !== undefined ? override.qty : (quantities[id] || 0);
 
-            if (qty <= 0 && !override) return; // Skip if 0 and not explicitly overridden to something else
+            if (qty <= 0 && !override) return;
 
-            const basePrice = override?.price !== undefined ? override.price : product.price;
-            // Apply markup hiddenly if positive
+            const basePrice = override?.price !== undefined ? override.price : (stateProduct?.price || latestProduct?.price || 0);
             const effectivePrice = basePrice * markupMultiplier;
 
             items.push({
                 ...product,
-                originalPrice: product.price,
-                basePrice, // price before markup
-                price: effectivePrice, // price shown to client
+                originalPrice: latestProduct?.price || stateProduct?.price || 0,
+                basePrice,
+                price: effectivePrice,
                 qty,
                 total: qty * effectivePrice,
                 isOverridden: !!override
             });
         });
 
-        return items.filter(item => item.qty > 0 || item.isOverridden);
+        return items.sort((a, b) => (a.category || '').localeCompare(b.category || ''));
     }, [quantities, prices, project.overrides, markupMultiplier]);
 
     const handleInputChange = (e) => {
@@ -205,41 +209,76 @@ const Budget = () => {
                 </div>
             </div>
 
-            {/* ADJUSTMENT SECTION */}
-            <div className="bg-white p-6 md:p-8 rounded-[40px] shadow-sm border border-slate-100 flex flex-col md:flex-row items-center gap-8">
-                <div className="flex items-center gap-4 min-w-[200px]">
-                    <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600">
-                        <Percent size={24} />
+            {/* ADJUSTMENT & TERMS SECTION */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white p-6 md:p-8 rounded-[40px] shadow-sm border border-slate-100 flex flex-col gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600">
+                            <Percent size={24} />
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest text-left">Ajuste de Precio</h4>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-left">Descuentos o Recargos</p>
+                        </div>
                     </div>
-                    <div>
-                        <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest text-left">Ajuste de Precio</h4>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Descuentos o Recargos</p>
-                    </div>
-                </div>
 
-                <div className="flex-1 flex items-center gap-6 w-full">
-                    <input
-                        type="range" min="-30" max="100" step="1"
-                        value={adjustmentPercentage}
-                        onChange={(e) => handleAdjustmentChange(Number(e.target.value))}
-                        className="flex-1 accent-amber-500 h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer"
-                    />
-                    <div className="bg-amber-50 px-4 py-3 rounded-2xl border border-amber-100 min-w-[120px] flex items-center gap-1">
+                    <div className="flex items-center gap-6 w-full">
                         <input
-                            type="number"
-                            value={adjustmentPercentage || ''}
-                            onChange={(e) => handleAdjustmentChange(e.target.value === '' ? 0 : Number(e.target.value))}
-                            className="w-full bg-transparent text-xl font-black text-center text-amber-700 outline-none focus:ring-0"
+                            type="range" min="-30" max="100" step="1"
+                            value={adjustmentPercentage}
+                            onChange={(e) => handleAdjustmentChange(Number(e.target.value))}
+                            className="flex-1 accent-amber-500 h-2 bg-slate-100 rounded-lg appearance-none cursor-pointer"
                         />
-                        <span className="text-xl font-black text-amber-700">%</span>
+                        <div className="bg-amber-50 px-4 py-3 rounded-2xl border border-amber-100 min-w-[120px] flex items-center gap-1">
+                            <input
+                                type="number"
+                                value={adjustmentPercentage || ''}
+                                onChange={(e) => handleAdjustmentChange(e.target.value === '' ? 0 : Number(e.target.value))}
+                                className="w-full bg-transparent text-xl font-black text-center text-amber-700 outline-none focus:ring-0"
+                            />
+                            <span className="text-xl font-black text-amber-700">%</span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-start gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                        <AlertCircle size={16} className="text-slate-400 shrink-0 mt-0.5" />
+                        <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
+                            Ajuste de margen. Los recargos se aplican de forma prorrateada en los unitarios.
+                        </p>
                     </div>
                 </div>
 
-                <div className="flex items-start gap-3 max-w-xs bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                    <AlertCircle size={16} className="text-slate-400 shrink-0 mt-0.5" />
-                    <p className="text-[10px] text-slate-500 leading-relaxed font-medium">
-                        Usa este control para ajustar el precio. Si el ajuste es positivo, se sumará al unitario de cada ítem de forma "invisible" para el cliente.
-                    </p>
+                <div className="bg-white p-6 md:p-8 rounded-[40px] shadow-sm border border-slate-100 space-y-4">
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-indigo-100 rounded-2xl flex items-center justify-center text-indigo-600">
+                            <FileText size={24} />
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-black text-slate-800 uppercase tracking-widest text-left">Propuesta Comercial</h4>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest text-left">Beneficios y condiciones</p>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Beneficios (Ventajas)</label>
+                            <textarea
+                                className="w-full h-24 bg-slate-50 border-none rounded-2xl p-3 text-xs font-bold text-slate-600 focus:ring-2 focus:ring-cyan-500 transition-all resize-none"
+                                value={project.projectInfo?.benefits || ''}
+                                onChange={(e) => updateProjectInfo('benefits', e.target.value)}
+                                placeholder={defaults.benefits || '• Rapidez, • Térmico...'}
+                            />
+                        </div>
+                        <div className="space-y-1.5">
+                            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Condiciones (Notas)</label>
+                            <textarea
+                                className="w-full h-24 bg-slate-50 border-none rounded-2xl p-3 text-xs font-bold text-slate-600 focus:ring-2 focus:ring-cyan-500 transition-all resize-none"
+                                value={project.projectInfo?.extraNotes || ''}
+                                onChange={(e) => updateProjectInfo('extraNotes', e.target.value)}
+                                placeholder={defaults.extraNotes || 'Validez del presupuesto...'}
+                            />
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -248,7 +287,7 @@ const Budget = () => {
                 <div className="px-8 py-6 border-b border-slate-50 flex items-center justify-between bg-slate-50/50">
                     <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest flex items-center gap-2">
                         <div className="w-1.5 h-6 bg-cyan-500 rounded-full"></div>
-                        Detalle de Insumos y Materiales
+                        DETALLE DE MATERIALES - SISTEMA SIP
                     </h3>
                 </div>
                 <div className="overflow-x-auto">
@@ -264,50 +303,61 @@ const Budget = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
-                            {budgetItems.map((item) => (
-                                <tr key={item.id} className={`hover:bg-slate-50/80 transition-all duration-300 ${item.qty === 0 ? 'opacity-40' : ''}`}>
-                                    <td className="px-8 py-5">
-                                        <div className="text-sm font-bold text-slate-800">{item.name}</div>
-                                        <div className="flex items-center gap-2 mt-0.5">
-                                            <div className="text-[10px] text-slate-400 font-black uppercase tracking-widest">{item.category}</div>
-                                            {item.isOverridden && <span className="text-[8px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest italic">Manual</span>}
-                                        </div>
-                                    </td>
-                                    <td className="px-4 py-5 text-center">
-                                        <span className="text-[10px] font-black text-slate-500 uppercase">{item.unit}</span>
-                                    </td>
-                                    <td className="px-4 py-5 text-center">
-                                        <input
-                                            type="number"
-                                            value={item.qty}
-                                            onChange={(e) => setOverride(item.id, { qty: Number(e.target.value) })}
-                                            className="w-16 h-10 rounded-xl bg-slate-50 text-slate-800 font-bold text-sm border border-slate-200 shadow-sm text-center focus:ring-2 focus:ring-cyan-500 outline-none"
-                                        />
-                                    </td>
-                                    <td className="px-8 py-5 text-right">
-                                        <input
-                                            type="number"
-                                            value={item.price}
-                                            onChange={(e) => setOverride(item.id, { price: Number(e.target.value) / markupMultiplier })}
-                                            className="w-28 h-10 rounded-xl bg-slate-50 text-slate-800 font-bold text-sm border border-slate-200 shadow-sm text-right px-3 focus:ring-2 focus:ring-cyan-500 outline-none font-mono"
-                                        />
-                                    </td>
-                                    <td className="px-8 py-5 text-right font-mono text-sm font-black text-slate-800">
-                                        {formatCurrency(item.total)}
-                                    </td>
-                                    <td className="px-4 py-5 text-right">
-                                        {item.isOverridden ? (
-                                            <button onClick={() => removeOverride(item.id)} title="Restaurar automático" className="p-2 text-slate-300 hover:text-cyan-500 transition-colors">
-                                                <AlertCircle size={18} />
-                                            </button>
-                                        ) : (
-                                            <button onClick={() => setOverride(item.id, { qty: 0 })} title="Eliminar línea" className="p-2 text-slate-300 hover:text-rose-500 transition-colors">
-                                                <X size={18} />
-                                            </button>
-                                        )}
-                                    </td>
-                                </tr>
-                            ))}
+                            {['1. SISTEMA DE PANELES', '2. MADERAS ESTRUCTURALES (PINO TRATADO)', '3. FIJACIONES Y ANCLAJES', '4. AISLACIÓN Y SELLADO QUÍMICO'].map(category => {
+                                const categoryItems = budgetItems.filter(item => item.category === category);
+                                if (categoryItems.length === 0) return null;
+
+                                return (
+                                    <React.Fragment key={category}>
+                                        <tr className="bg-slate-50/30">
+                                            <td colSpan="6" className="px-8 py-2 text-[10px] font-black text-cyan-600 uppercase tracking-[0.2em] bg-slate-50/50">
+                                                {category}
+                                            </td>
+                                        </tr>
+                                        {categoryItems.map((item) => (
+                                            <tr key={item.id} className={`hover:bg-slate-50/80 transition-all duration-300 ${item.qty === 0 ? 'opacity-40' : ''}`}>
+                                                <td className="px-8 py-5 text-sm font-bold text-slate-800">
+                                                    <div>{item.name}</div>
+                                                    {item.isOverridden && <span className="text-[8px] bg-amber-100 text-amber-600 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest italic mt-1 inline-block">Manual</span>}
+                                                </td>
+                                                <td className="px-4 py-5 text-center">
+                                                    <span className="text-[10px] font-black text-slate-500 uppercase">{item.unit}</span>
+                                                </td>
+                                                <td className="px-4 py-5 text-center">
+                                                    <input
+                                                        type="number"
+                                                        value={item.qty}
+                                                        onChange={(e) => setOverride(item.id, { qty: Number(e.target.value) })}
+                                                        className="w-16 h-10 rounded-xl bg-slate-50 text-slate-800 font-bold text-sm border border-slate-200 shadow-sm text-center focus:ring-2 focus:ring-cyan-500 outline-none"
+                                                    />
+                                                </td>
+                                                <td className="px-8 py-5 text-right">
+                                                    <input
+                                                        type="number"
+                                                        value={Math.round(item.price)}
+                                                        onChange={(e) => setOverride(item.id, { price: Number(e.target.value) / markupMultiplier })}
+                                                        className="w-28 h-10 rounded-xl bg-slate-50 text-slate-800 font-bold text-sm border border-slate-200 shadow-sm text-right px-3 focus:ring-2 focus:ring-cyan-500 outline-none font-mono"
+                                                    />
+                                                </td>
+                                                <td className="px-8 py-5 text-right font-mono text-sm font-black text-slate-800">
+                                                    {formatCurrency(item.total)}
+                                                </td>
+                                                <td className="px-4 py-5 text-right">
+                                                    {item.isOverridden ? (
+                                                        <button onClick={() => removeOverride(item.id)} title="Restaurar automático" className="p-2 text-slate-300 hover:text-cyan-500 transition-colors">
+                                                            <AlertCircle size={18} />
+                                                        </button>
+                                                    ) : (
+                                                        <button onClick={() => setOverride(item.id, { qty: 0 })} title="Eliminar línea" className="p-2 text-slate-300 hover:text-rose-500 transition-colors">
+                                                            <X size={18} />
+                                                        </button>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </React.Fragment>
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>

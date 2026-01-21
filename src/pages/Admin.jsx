@@ -38,39 +38,61 @@ const Admin = () => {
 
             {/* DEFAULTS SECTION */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 space-y-6">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-cyan-100 rounded-2xl flex items-center justify-center text-cyan-600">
-                            <ShoppingBag size={24} />
+                <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 space-y-6 relative group">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-cyan-100 rounded-2xl flex items-center justify-center text-cyan-600">
+                                <ShoppingBag size={24} />
+                            </div>
+                            <div>
+                                <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">Beneficios Predeterminados</h3>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Para nuevos presupuestos</p>
+                            </div>
                         </div>
-                        <div>
-                            <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">Beneficios Predeterminados</h3>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Para nuevos presupuestos</p>
-                        </div>
+                        <button
+                            onClick={() => triggerToast()}
+                            className="p-2 text-slate-300 hover:text-cyan-500 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Guardar cambios"
+                        >
+                            <Save size={20} />
+                        </button>
                     </div>
                     <textarea
                         className="w-full h-40 border-2 border-slate-50 rounded-3xl p-6 text-sm focus:ring-4 focus:ring-cyan-500/10 focus:border-cyan-400 outline-none font-medium text-slate-600 transition-all resize-none"
                         value={defaults.benefits}
                         placeholder="Ej: • Rapidez Constructiva..."
-                        onChange={(e) => updateDefaults({ benefits: e.target.value })}
+                        onChange={(e) => {
+                            updateDefaults({ benefits: e.target.value });
+                        }}
                     />
                 </div>
 
-                <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 space-y-6">
-                    <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600">
-                            <FileText size={24} />
+                <div className="bg-white rounded-[40px] p-8 shadow-sm border border-slate-100 space-y-6 relative group">
+                    <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600">
+                                <FileText size={24} />
+                            </div>
+                            <div>
+                                <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">Condiciones Predeterminadas</h3>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Legales y vigencias</p>
+                            </div>
                         </div>
-                        <div>
-                            <h3 className="font-black text-slate-800 uppercase tracking-widest text-sm">Condiciones Predeterminadas</h3>
-                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Legales y vigencias</p>
-                        </div>
+                        <button
+                            onClick={() => triggerToast()}
+                            className="p-2 text-slate-300 hover:text-amber-500 transition-colors opacity-0 group-hover:opacity-100"
+                            title="Guardar cambios"
+                        >
+                            <Save size={20} />
+                        </button>
                     </div>
                     <textarea
                         className="w-full h-40 border-2 border-slate-50 rounded-3xl p-6 text-sm focus:ring-4 focus:ring-cyan-500/10 focus:border-cyan-400 outline-none font-medium text-slate-600 transition-all resize-none"
                         value={defaults.extraNotes}
                         placeholder="Ej: Validez por 15 días..."
-                        onChange={(e) => updateDefaults({ extraNotes: e.target.value })}
+                        onChange={(e) => {
+                            updateDefaults({ extraNotes: e.target.value });
+                        }}
                     />
                 </div>
             </div>

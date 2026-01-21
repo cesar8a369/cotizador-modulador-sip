@@ -179,6 +179,14 @@ const FloorPlan = ({ isPrint = false }) => {
     const contentWidth = width * BASE_SCALE;
     const contentHeight = length * BASE_SCALE;
 
+    // --- CALCULATIONS FOR UI ---
+    let recessPisoArea = 0;
+    recesses.forEach(r => { recessPisoArea += r.width * r.depth; });
+    const areaPiso = Math.max(0, (width * length) - recessPisoArea);
+    const PANEL_SURFACE = 1.22 * 2.44;
+    const cantPiso = Math.ceil(areaPiso / PANEL_SURFACE);
+    const panelPerimeterPiso = cantPiso * 7.32;
+
     const getPerimeterPath = () => {
         const w = width * BASE_SCALE, h = length * BASE_SCALE;
         let p = `M 0 0`;
@@ -210,9 +218,24 @@ const FloorPlan = ({ isPrint = false }) => {
                         <button onClick={() => setIsMaximized(!isMaximized)} className={`p-2 rounded-lg transition-colors ${isMaximized ? 'bg-cyan-500 text-white' : 'bg-white border border-slate-200 text-slate-400 hover:text-cyan-500'}`}><Maximize2 size={16} /></button>
                     </div>
 
-                    <div className="flex gap-2">
-                        <button onClick={() => addRecess('Sur')} className="bg-white border border-slate-200 text-[10px] font-bold text-slate-600 px-3 py-1.5 rounded-lg hover:border-cyan-500 hover:text-cyan-600 uppercase flex items-center gap-2 shadow-sm"><Plus size={14} /> Hall Frontal (Sur)</button>
-                        <button onClick={() => addRecess('Norte')} className="bg-white border border-slate-200 text-[10px] font-bold text-slate-600 px-3 py-1.5 rounded-lg hover:border-cyan-500 hover:text-cyan-600 uppercase flex items-center gap-2 shadow-sm"><Plus size={14} /> Hall Posterior (Norte)</button>
+                    <div className="flex gap-2 flex-wrap justify-end">
+                        <div className="flex bg-white rounded-lg border border-slate-200 p-0.5 shadow-sm">
+                            <button onClick={() => addRecess('Sur')} className="p-1 px-2 hover:bg-cyan-50 rounded text-[9px] font-bold text-slate-600 flex items-center gap-1 border-r" title="Hall Frontal">Front</button>
+                            <button onClick={() => addRecess('Norte')} className="p-1 px-2 hover:bg-cyan-50 rounded text-[9px] font-bold text-slate-600 flex items-center gap-1 border-r" title="Hall Posterior">Back</button>
+                            <button onClick={() => addRecess('Este')} className="p-1 px-2 hover:bg-cyan-50 rounded text-[9px] font-bold text-slate-600 flex items-center gap-1 border-r" title="Hall Lateral Este">East</button>
+                            <button onClick={() => addRecess('Oeste')} className="p-1 px-2 hover:bg-cyan-50 rounded text-[9px] font-bold text-slate-600 flex items-center gap-1" title="Hall Lateral Oeste">West</button>
+                        </div>
+
+                        <button
+                            onClick={() => {
+                                const state = useStore.getState();
+                                if (state.addLShape) state.addLShape();
+                            }}
+                            className="bg-indigo-50 border border-indigo-200 text-[10px] font-bold text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-100 uppercase flex items-center gap-2 shadow-sm"
+                        >
+                            <Maximize2 size={14} className="rotate-45" /> Forma L
+                        </button>
+
                         <div className="h-6 w-px bg-slate-200 mx-1"></div>
                         <button onClick={() => addInteriorWall()} className="bg-slate-900 hover:bg-slate-800 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2"><Plus size={14} /> Tabique</button>
                         <button
@@ -223,6 +246,26 @@ const FloorPlan = ({ isPrint = false }) => {
                             <RotateCcw size={18} />
                         </button>
                         <button onClick={takeSnapshot} className="p-2 text-slate-400 hover:text-cyan-500 rounded-lg"><Camera size={18} /></button>
+                    </div>
+                </div>
+            )}
+
+            {/* TECH DATA OVERLAY */}
+            {!isPrint && (
+                <div className="absolute bottom-4 left-4 z-10 flex flex-col gap-1">
+                    <div className="bg-slate-900/90 backdrop-blur px-3 py-2 rounded-2xl text-[8px] font-black text-cyan-400 border border-white/10 flex flex-col gap-1 shadow-2xl">
+                        <div className="flex justify-between gap-6">
+                            <span className="text-white/40 uppercase tracking-widest">ÁREA DE PISO:</span>
+                            <span className="text-white text-[10px]">{areaPiso.toFixed(2)} m²</span>
+                        </div>
+                        <div className="flex justify-between gap-6">
+                            <span className="text-white/40 uppercase tracking-widest">PANELES DE PISO:</span>
+                            <span className="text-white text-[10px]">{cantPiso} u.</span>
+                        </div>
+                        <div className="flex justify-between gap-6 border-t border-white/5 pt-1 mt-1 font-bold">
+                            <span className="text-cyan-500/60 uppercase tracking-widest">PERÍM. PANELES PISO:</span>
+                            <span className="text-cyan-400 text-[10px]">{panelPerimeterPiso.toFixed(2)} ml</span>
+                        </div>
                     </div>
                 </div>
             )}
@@ -401,15 +444,46 @@ const FloorPlan = ({ isPrint = false }) => {
                         })}
                         <g transform="translate(0, -80)">
                             <line x1="0" y1="0" x2={contentWidth} y2="0" stroke="#94a3b8" strokeWidth="1" markerStart="url(#arrowhead-rev)" markerEnd="url(#arrowhead)" />
-                            <text x={contentWidth / 2} y="-15" textAnchor="middle" className="text-[12px] font-black fill-slate-400">FACHADA POSTERIOR (NORTE)</text>
+                            <rect x={contentWidth / 2 - 50} y="-28" width="100" height="20" rx="4" fill="white" fillOpacity="0.9" stroke="#cbd5e1" strokeWidth="0.5" />
+                            <text x={contentWidth / 2} y="-14" textAnchor="middle" className="text-[12px] font-black fill-slate-500 uppercase tracking-widest">
+                                NORTE: {width.toFixed(2)}m
+                            </text>
                         </g>
+
                         <g transform={`translate(0, ${contentHeight + 80})`}>
                             <line x1="0" y1="0" x2={contentWidth} y2="0" stroke="#94a3b8" strokeWidth="1" markerStart="url(#arrowhead-rev)" markerEnd="url(#arrowhead)" />
-                            <text x={contentWidth / 2} y="15" textAnchor="middle" className="text-[14px] font-black fill-cyan-500 uppercase tracking-widest">FACHADA FRONTAL (SUR)</text>
+                            <rect x={contentWidth / 2 - 60} y="4" width="120" height="24" rx="6" fill="#06b6d4" />
+                            <text x={contentWidth / 2} y="20" textAnchor="middle" className="text-[14px] font-black fill-white uppercase tracking-[0.2em]">
+                                SUR: {width.toFixed(2)}m
+                            </text>
                         </g>
+
                         <g transform="translate(-120, 0)">
                             <line x1="0" y1="0" x2="0" y2={contentHeight} stroke="#94a3b8" strokeWidth="1" markerStart="url(#arrowhead-rev)" markerEnd="url(#arrowhead)" />
-                            <text x="-20" y={contentHeight / 2} textAnchor="middle" transform={`rotate(-90, -20, ${contentHeight / 2})`} className="text-[12px] font-bold fill-slate-400">{length}m LARGO</text>
+                            <rect x="-42" y={contentHeight / 2 - 40} width="20" height="80" rx="4" fill="white" fillOpacity="0.9" stroke="#cbd5e1" strokeWidth="0.5" />
+                            <text
+                                x="-28"
+                                y={contentHeight / 2}
+                                textAnchor="middle"
+                                transform={`rotate(-90, -28, ${contentHeight / 2})`}
+                                className="text-[10px] font-black fill-slate-500 uppercase tracking-widest"
+                            >
+                                OESTE: {length.toFixed(2)}m
+                            </text>
+                        </g>
+
+                        <g transform={`translate(${contentWidth + 120}, 0)`}>
+                            <line x1="0" y1="0" x2="0" y2={contentHeight} stroke="#94a3b8" strokeWidth="1" markerStart="url(#arrowhead-rev)" markerEnd="url(#arrowhead)" />
+                            <rect x="22" y={contentHeight / 2 - 40} width="20" height="80" rx="4" fill="white" fillOpacity="0.9" stroke="#cbd5e1" strokeWidth="0.5" />
+                            <text
+                                x="36"
+                                y={contentHeight / 2}
+                                textAnchor="middle"
+                                transform={`rotate(90, 36, ${contentHeight / 2})`}
+                                className="text-[10px] font-black fill-slate-500 uppercase tracking-widest"
+                            >
+                                ESTE: {length.toFixed(2)}m
+                            </text>
                         </g>
                     </svg>
                 </div>

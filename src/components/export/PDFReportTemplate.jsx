@@ -119,19 +119,19 @@ const PDFReportTemplate = ({ snapshots3D, floorPlanImage, geo, quantities = {} }
                     </thead>
                     <tbody>
                         {[
-                            { label: 'Paneles Muros Exteriores', val: geo.cantMurosExt, unit: 'u' },
-                            { label: 'Paneles Tabiqueria Interna', val: geo.cantMurosInt, unit: 'u' },
-                            { label: 'Paneles de Piso (SIP)', val: geo.cantPiso, unit: 'u' },
-                            { label: 'Paneles de Techo (SIP)', val: geo.cantTecho, unit: 'u' },
-                            { label: 'Madera Vinculante', val: quantities['MAD_VINC_2X3'] || quantities['MAD_VINC_2X4'], unit: 'ml' },
-                            { label: 'Soleras de Base y Superior', val: quantities['MAD_SOL_BASE'] || quantities['MAD_SOL_1X5'], unit: 'ml' },
-                            { label: 'Clavaderas 2x2"', val: quantities['MAD_VINC_2X2'] || quantities['MAD_CLAV_2X2'], unit: 'ml' },
-                            { label: 'Vigas de Piso/Techo 3x6"', val: quantities['MAD_VIGA_3X6'], unit: 'ml' },
-                            { label: 'Tornillos Torx 120mm', val: quantities['TORX_120'], unit: 'u' },
-                            { label: 'Tornillos Hex 3" (Techo)', val: quantities['TORN_HEX_3'], unit: 'u' },
-                            { label: 'Pegamento PU', val: quantities['PEG_PU'], unit: 'u' },
-                            { label: 'Espuma Poliuretánica 750cc', val: quantities['ESPUMA_PU'], unit: 'u' },
-                            { label: 'Barrera de Viento y Agua', val: quantities['BARRERA'], unit: 'm²' }
+                            { label: 'Muro Exterior', val: geo.cantMurosExt, unit: 'UNID' },
+                            { label: 'Muro Interior', val: geo.cantMurosInt, unit: 'UNID' },
+                            { label: 'Piso SIP OSB 70mm', val: geo.cantPiso, unit: 'UNID' },
+                            { label: 'Techo SIP OSB 70mm', val: geo.cantTecho, unit: 'UNID' },
+                            { label: 'Pino 3x6" (Techo/Piso)', val: quantities['MAD_VIGA_3X6'], unit: 'ML' },
+                            { label: 'Pino 2x3" (Vinculante)', val: quantities['MAD_VINC_2X3'] || quantities['MAD_VINC_2X4'], unit: 'ML' },
+                            { label: 'Pino 1x4" (Solera)', val: quantities['MAD_SOL_BASE'] || quantities['MAD_SOL_1X5'], unit: 'ML' },
+                            { label: 'Pino 2x2" (Clavadera)', val: quantities['MAD_CLAV_2X2'], unit: 'ML' },
+                            { label: 'Torx 120mm (Muros)', val: quantities['TORX_120'], unit: 'UNID' },
+                            { label: 'Tornillo Hex 3" (Techo)', val: quantities['TORN_HEX_3'], unit: 'UNID' },
+                            { label: 'Pegamento Poliuretánico', val: quantities['PEG_PU'], unit: 'POMO' },
+                            { label: 'Espuma Poliuretánica', val: quantities['ESPUMA_PU'], unit: 'UNID' },
+                            { label: 'Barrera Viento y Agua', val: quantities['BARRERA'], unit: 'ROLLO 30 M2' }
                         ].map((row, i) => (
                             <tr key={i} style={{ borderBottom: '1px solid #f1f5f9', backgroundColor: i % 2 === 0 ? '#ffffff' : '#f8fafc' }}>
                                 <td style={{ padding: '18px 20px', fontWeight: 600 }}>{row.label}</td>

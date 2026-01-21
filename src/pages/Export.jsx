@@ -73,17 +73,17 @@ const ProjectFooter = ({ price, pageNumber }) => (
 );
 
 const Export = () => {
-    const { dimensions, selections, interiorWalls, openings, facadeConfigs, prices, project, snapshots } = useStore();
+    const { dimensions, selections, interiorWalls, openings, facadeConfigs, prices, project, snapshots, foundationType, structureType, defaults } = useStore();
     const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
     const { geo, quantities } = useMemo(() => {
         try {
-            return fullCalculation(dimensions, selections, interiorWalls, openings, facadeConfigs, project);
+            return fullCalculation(dimensions, selections, interiorWalls, openings, facadeConfigs, project, foundationType, structureType, prices);
         } catch (e) {
             console.error("Calculation error:", e);
             return { geo: {}, quantities: {} };
         }
-    }, [dimensions, selections, interiorWalls, openings, facadeConfigs, project]);
+    }, [dimensions, selections, interiorWalls, openings, facadeConfigs, project, foundationType, structureType, prices]);
 
     const adjustmentPercentage = project.projectInfo?.adjustmentPercentage || 0;
     const markupMultiplier = adjustmentPercentage > 0 ? (1 + adjustmentPercentage / 100) : 1;
@@ -91,19 +91,22 @@ const Export = () => {
 
     const budgetItems = useMemo(() => {
         const items = [];
-        const allProductIds = new Set([...Object.keys(quantities), ...Object.keys(project.overrides || {})]);
+        const allProductIds = new Set([...Object.keys(quantities || {}), ...Object.keys(project?.overrides || {})]);
 
         allProductIds.forEach(id => {
-            const product = prices.find(p => p.id === id);
-            if (!product) return;
+            const latestProduct = INITIAL_PRICES.find(p => p.id === id);
+            const stateProduct = prices?.find(p => p.id === id);
 
-            const override = project.overrides?.[id];
+            if (!latestProduct && !stateProduct) return;
+
+            const product = latestProduct || stateProduct;
+            const override = project?.overrides?.[id];
             const qty = override?.qty !== undefined ? override.qty : (quantities[id] || 0);
 
             if (qty <= 0 && !override) return;
 
-            const basePrice = override?.price !== undefined ? override.price : product.price;
-            const effectivePrice = basePrice * markupMultiplier;
+            const basePrice = override?.price !== undefined ? override.price : (stateProduct?.price || latestProduct?.price || 0);
+            const effectivePrice = basePrice * (Number(markupMultiplier) || 1);
 
             items.push({
                 ...product,
@@ -115,7 +118,7 @@ const Export = () => {
         });
 
         return items.filter(item => item.qty > 0 || item.isOverridden);
-    }, [quantities, prices, project.overrides, markupMultiplier]);
+    }, [quantities, prices, project?.overrides, markupMultiplier]);
 
     const subtotalWithMarkup = Math.round((budgetItems || []).reduce((acc, item) => acc + (Number(item.total) || 0), 0)) || 0;
     const finalTotal = Math.round(subtotalWithMarkup * (Number(adjustmentPercentage) < 0 ? (Number(discountFactor) || 1) : 1)) || 0;
@@ -567,10 +570,10 @@ const Export = () => {
                             </h3>
                             <div className="grid grid-cols-5 gap-2">
                                 {[
-                                    { label: 'Exteriores', val: geo?.cantMurosExt || 0 },
-                                    { label: 'Interiores', val: geo?.cantMurosInt || 0 },
-                                    { label: 'Pisos', val: geo?.cantPiso || 0 },
-                                    { label: 'Techo', val: geo?.cantTecho || 0 },
+                                    { label: 'Muro Exterior', val: geo?.cantMurosExt || 0 },
+                                    { label: 'Muro Interior', val: geo?.cantMurosInt || 0 },
+                                    { label: 'Piso SIP OSB 70mm', val: geo?.cantPiso || 0 },
+                                    { label: 'Techo SIP OSB 70mm', val: geo?.cantTecho || 0 },
                                     { label: 'TOTAL KIT', val: geo?.totalPaneles || 0, highlight: true }
                                 ].map((item, i) => (
                                     <div key={i} className={`p-4 rounded-2xl border flex flex-col items-center text-center ${item.highlight ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-100'}`}>
@@ -590,14 +593,15 @@ const Export = () => {
                                 <table className="w-full">
                                     <tbody className="divide-y divide-slate-200">
                                         {[
-                                            { label: 'Área Paneles Perimetrales', val: geo?.areaMurosBruta?.toFixed(2), unit: 'm²' },
-                                            { label: 'Sexta Cara (Piso Autoportante)', val: geo?.areaPiso?.toFixed(2), unit: 'm²' },
-                                            { label: 'Cubierta Técnica SIP', val: geo?.areaTecho?.toFixed(2), unit: 'm²' },
-                                            { label: 'Longitud Envolvente Exterior', val: geo?.perimExt?.toFixed(2), unit: 'ml' },
-                                            { label: 'Tabiquería Interior Detallada', val: geo?.tabiques?.toFixed(2), unit: 'ml' },
-                                            { label: 'Vínculos de Madera (Estimado)', val: geo?.perimLinealPaneles?.toFixed(2), unit: 'ml' },
+                                            { label: 'Área de Planta', val: geo?.areaPiso?.toFixed(2), unit: 'm²' },
+                                            { label: 'Perímetro Exterior', val: geo?.perimExt?.toFixed(2), unit: 'ml' },
+                                            { label: 'Área Muros', val: geo?.areaMurosBruta?.toFixed(2), unit: 'm²' },
+                                            { label: 'Área Techos', val: geo?.areaTecho?.toFixed(2), unit: 'm²' },
+                                            { label: 'Metros Lineales Divisiones', val: geo?.tabiques?.toFixed(2), unit: 'ml' },
+                                            { label: 'Perímetro Total Aberturas', val: geo?.perimAberturas?.toFixed(2), unit: 'ml' },
+                                            { label: 'Perímetro Total de Paneles (Muros/Piso)', val: geo?.perimLinealPaneles?.toFixed(2), unit: 'ml' },
                                             ...(geo?.facadeDetails ? Object.entries(geo.facadeDetails).map(([side, area]) => ({
-                                                label: `Muro Fachada ${side}`, val: area?.toFixed(2), unit: 'm²'
+                                                label: `Área Fachada ${side}`, val: area?.toFixed(2), unit: 'm²'
                                             })) : [])
                                         ].map((row, i) => (
                                             <tr key={i} className="hover:bg-white transition-colors">
@@ -630,19 +634,32 @@ const Export = () => {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 text-[9px]">
-                                    {budgetItems.map(item => (
-                                        <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                                            <td className="px-5 py-2 leading-tight">
-                                                <p className="font-black text-slate-800 uppercase tracking-tighter">{item.name}</p>
-                                                <p className="text-[6.5px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-0.5">{item.category}</p>
-                                            </td>
-                                            <td className="px-2 py-2 text-center font-bold text-slate-400 uppercase">{item.unit}</td>
-                                            <td className="px-2 py-2 text-center leading-none">
-                                                <span className="bg-slate-100 px-1.5 py-0.5 rounded-lg font-black text-slate-700 tabular-nums">{item.qty}</span>
-                                            </td>
-                                            <td className="px-5 py-2 text-right font-black text-slate-900 tabular-nums">{formatCurrency(item.total)}</td>
-                                        </tr>
-                                    ))}
+                                    {['1. SISTEMA DE PANELES', '2. MADERAS ESTRUCTURALES (PINO TRATADO)', '3. FIJACIONES Y ANCLAJES', '4. AISLACIÓN Y SELLADO QUÍMICO'].map(category => {
+                                        const categoryItems = budgetItems.filter(item => item.category === category);
+                                        if (categoryItems.length === 0) return null;
+
+                                        return (
+                                            <React.Fragment key={category}>
+                                                <tr className="bg-slate-50">
+                                                    <td colSpan="4" className="px-5 py-2 text-[7px] font-black text-cyan-600 uppercase tracking-widest leading-none">
+                                                        {category}
+                                                    </td>
+                                                </tr>
+                                                {categoryItems.map(item => (
+                                                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="px-5 py-2 leading-tight">
+                                                            <p className="font-black text-slate-800 uppercase tracking-tighter">{item.name}</p>
+                                                        </td>
+                                                        <td className="px-2 py-2 text-center font-bold text-slate-400 uppercase">{item.unit}</td>
+                                                        <td className="px-2 py-2 text-center leading-none">
+                                                            <span className="bg-slate-100 px-1.5 py-0.5 rounded-lg font-black text-slate-700 tabular-nums">{item.qty}</span>
+                                                        </td>
+                                                        <td className="px-5 py-2 text-right font-black text-slate-900 tabular-nums">{formatCurrency(item.total)}</td>
+                                                    </tr>
+                                                ))}
+                                            </React.Fragment>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>
@@ -666,8 +683,8 @@ const Export = () => {
                                 <div className="w-8 h-8 bg-cyan-500/20 rounded-xl flex items-center justify-center"><CheckCircle2 size={24} /></div>
                                 Ventajas del Sistema SIP
                             </h3>
-                            <div className="text-sm font-medium leading-relaxed opacity-90 pl-11">
-                                {project?.projectInfo?.benefits || 'Nuestros paneles ofrecen una aislación térmica superior y una rapidez de montaje inigualable en seco.'}
+                            <div className="text-sm font-medium leading-relaxed opacity-90 pl-11 whitespace-pre-line">
+                                {project?.projectInfo?.benefits || defaults?.benefits || 'Nuestros paneles ofrecen una aislación térmica superior y una rapidez de montaje inigualable en seco.'}
                             </div>
                         </section>
 
@@ -677,7 +694,7 @@ const Export = () => {
                                 Condiciones Comerciales
                             </h3>
                             <div className="text-sm font-bold leading-relaxed text-slate-500 pl-11 whitespace-pre-line">
-                                {project?.projectInfo?.extraNotes || 'La presente cotización tiene una vigencia de 15 días corridos.'}
+                                {project?.projectInfo?.extraNotes || defaults?.extraNotes || 'La presente cotización tiene una vigencia de 15 días corridos.'}
                             </div>
                         </section>
                     </div>

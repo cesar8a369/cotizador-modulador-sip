@@ -16,8 +16,8 @@ export const useStore = create(
                 location: '',
                 date: new Date().toISOString().split('T')[0],
                 projectInfo: {
-                    benefits: '• Aislación térmica superior\n• Rapidez de montaje\n• Estética moderna y funcional',
-                    extraNotes: 'Vigencia del presupuesto: 15 días.',
+                    benefits: '',
+                    extraNotes: '',
                     adjustmentPercentage: 0
                 },
                 recesses: [], // For irregular shapes like halls
@@ -52,14 +52,20 @@ export const useStore = create(
             selections: {
                 exteriorWallId: "OSB-70-E",
                 interiorWallId: "OSB-70-INT",
-                roofId: "OSB-50-TECHO",
-                floorId: "OSB-50-PISO",
+                roofId: "OSB-70-TECHO",
+                floorId: "OSB-70-PISO",
+                includeExterior: true,
+                includeInterior: true,
+                includeRoof: true,
+                includeFloor: true,
             },
 
             // Geometry
             interiorWalls: [],
             interiorWallsLength: 0,
             openings: [],
+            foundationType: 'platea', // 'platea' or 'estructura'
+            structureType: 'madera', // 'madera' or 'metal'
 
             // Decoupled Facade Logic
             facadeConfigs: {
@@ -73,11 +79,16 @@ export const useStore = create(
             showRoofPlates: true,
             beamOffset: 0, // Manual vertical offset for beams
 
-
             // --- PRICES ---
             prices: INITIAL_PRICES,
 
             // --- ACTIONS ---
+            toggleSelectionCategory: (category) => set((state) => ({
+                selections: {
+                    ...state.selections,
+                    [category]: !state.selections[category]
+                }
+            })),
             setShowBeams: (val) => set({ showBeams: val }),
             setShowRoofPlates: (val) => set({ showRoofPlates: val }),
             setBeamOffset: (val) => set({ beamOffset: Number(val) }),
@@ -191,6 +202,9 @@ export const useStore = create(
                 openings: state.openings.map(o => o.id === id ? { ...o, ...updates } : o)
             })),
 
+            setFoundationType: (type) => set({ foundationType: type }),
+            setStructureType: (type) => set({ structureType: type }),
+
             updateFacadeConfig: (side, updates) => set((state) => ({
                 facadeConfigs: {
                     ...state.facadeConfigs,
@@ -296,6 +310,28 @@ export const useStore = create(
                 }
             })),
 
+            addLShape: () => set((state) => {
+                const { width, length } = state.dimensions;
+                const recessWidth = width * 0.4;
+                const recessDepth = length * 0.4;
+
+                const newRecess = {
+                    id: crypto.randomUUID(),
+                    side: 'Sur',
+                    x: width - recessWidth, // Right side
+                    width: recessWidth,
+                    depth: recessDepth,
+                    height: 2.44
+                };
+
+                return {
+                    project: {
+                        ...state.project,
+                        recesses: [...(state.project.recesses || []), newRecess]
+                    }
+                };
+            }),
+
             // Reset to default
             resetProject: () => set({
                 dimensions: {
@@ -315,9 +351,11 @@ export const useStore = create(
                 selections: {
                     exteriorWallId: "OSB-70-E",
                     interiorWallId: "OSB-70-INT",
-                    roofId: "OSB-50-TECHO",
-                    floorId: "OSB-50-PISO",
+                    roofId: "OSB-70-TECHO",
+                    floorId: "OSB-70-PISO",
                 },
+                foundationType: 'platea',
+                structureType: 'madera',
                 project: {
                     clientName: '', phone: '', email: '', location: '',
                     date: new Date().toISOString().split('T')[0],
