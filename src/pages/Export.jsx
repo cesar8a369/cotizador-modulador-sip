@@ -1,25 +1,27 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { useStore } from '../store/useStore';
 import { fullCalculation } from '../utils/calculations';
+import { calculateBudget } from '../utils/budget';
 import FloorPlan from '../components/engineering/FloorPlan';
 import FacadeView from '../components/engineering/FacadeView';
-import { FileText, Download, Loader2, CheckCircle2, Factory, User, MapPin, Calendar, Home, Ruler, PenTool, Layout as LayoutIcon, Image as ImageIcon } from 'lucide-react';
+import { FileText, Download, Loader2, CheckCircle2, Factory, User, MapPin, Calendar, Home, Ruler, PenTool, Layout, Image as ImageIcon, Maximize, Compass, GitCommit, Settings, Columns, Square } from 'lucide-react';
 import { PROJECT_LOGO } from '../data/constants';
 import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
-import PDFReportTemplate from '../components/export/PDFReportTemplate';
 
 const FACTORY_NAME = "LA FÁBRICA DEL PANEL";
 
 const PageHeader = ({ title }) => {
-    const year = new Date().getFullYear();
-    const token = useMemo(() => Math.floor(Math.random() * 9000) + 1000, []);
+    const { project, generateBudgetNumber } = useStore();
+
+    React.useEffect(() => {
+        if (!project.budgetNumber) {
+            generateBudgetNumber();
+        }
+    }, [project.budgetNumber, generateBudgetNumber]);
 
     return (
-        <div className="relative mb-10">
-            {/* Accent Bar */}
-            <div className="absolute -left-[20mm] top-0 w-2 h-16 bg-cyan-600 rounded-r-full"></div>
-
+        <div className="relative mb-10 shrink-0">
+            <div className="absolute -left-[20mm] top-0 w-2 h-16 bg-orange-600 rounded-r-full"></div>
             <div className="flex justify-between items-end pb-4 border-b-2 border-slate-100">
                 <div>
                     <div className="flex items-center gap-3 mb-2">
@@ -28,7 +30,7 @@ const PageHeader = ({ title }) => {
                         </div>
                         <div className="flex flex-col">
                             <span className="text-[10px] font-black text-slate-950 tracking-widest leading-none">MODULADOR SIP</span>
-                            <span className="text-[8px] font-bold text-slate-400 uppercase tracking-tighter mt-1">{FACTORY_NAME}</span>
+                            <span className="text-[8px] font-bold text-orange-600 uppercase tracking-tighter mt-1">{FACTORY_NAME}</span>
                         </div>
                     </div>
                     <h1 className="text-3xl font-black text-slate-800 uppercase tracking-tighter leading-none">{title || 'Documento'}</h1>
@@ -36,7 +38,7 @@ const PageHeader = ({ title }) => {
                 <div className="text-right">
                     <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">Registro Técnico No.</p>
                     <p className="text-xs font-mono font-bold text-slate-900 bg-slate-100 px-3 py-1 rounded-full inline-block">
-                        {year}/{token}
+                        {project.budgetNumber || '...'}
                     </p>
                 </div>
             </div>
@@ -44,26 +46,27 @@ const PageHeader = ({ title }) => {
     );
 };
 
-const ProjectFooter = ({ price, pageNumber }) => (
-    <div className="mt-auto">
+const ProjectFooter = ({ price, pageNumber, hidePrice }) => (
+    <div className="mt-auto shrink-0">
         <div className="flex justify-between items-center pt-6 border-t border-slate-100">
             <div className="flex items-center gap-6">
                 <div className="w-10 h-10 bg-white rounded-lg flex items-center justify-center p-1 border border-slate-100 shadow-sm">
                     <img src={PROJECT_LOGO} alt="Logo Small" className="w-full h-full object-contain" />
                 </div>
                 <div>
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Soporte Técnico</p>
-                    <p className="text-[10px] font-bold text-cyan-600 uppercase tracking-tighter">consultora.resolvia@gmail.com</p>
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">WhatsApp / Contacto</p>
+                    <p className="text-[10px] font-black text-orange-600 uppercase tracking-tighter leading-none">1176561032 (area - ventas)</p>
                 </div>
             </div>
-
             <div className="flex items-center gap-6 text-right">
-                <div className="bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Inversión Final</p>
-                    <p className="text-lg font-black text-slate-900 tracking-tighter leading-none">
-                        {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(price)}
-                    </p>
-                </div>
+                {!hidePrice && (
+                    <div className="bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-0.5">Inversión Final</p>
+                        <p className="text-lg font-black text-slate-900 tracking-tighter leading-none">
+                            {new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(price)}
+                        </p>
+                    </div>
+                )}
                 <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white font-black text-xs">
                     {pageNumber}
                 </div>
@@ -73,7 +76,7 @@ const ProjectFooter = ({ price, pageNumber }) => (
 );
 
 const Export = () => {
-    const { dimensions, selections, interiorWalls, openings, facadeConfigs, prices, project, snapshots, foundationType, structureType, defaults } = useStore();
+    const { dimensions, selections, interiorWalls, openings, facadeConfigs, prices, project, snapshots, foundationType, structureType } = useStore();
     const [isGeneratingImage, setIsGeneratingImage] = useState(false);
 
     const { geo, quantities } = useMemo(() => {
@@ -85,85 +88,45 @@ const Export = () => {
         }
     }, [dimensions, selections, interiorWalls, openings, facadeConfigs, project, foundationType, structureType, prices]);
 
-    const adjustmentPercentage = project.projectInfo?.adjustmentPercentage || 0;
-    const markupMultiplier = adjustmentPercentage > 0 ? (1 + adjustmentPercentage / 100) : 1;
-    const discountFactor = adjustmentPercentage < 0 ? (1 + adjustmentPercentage / 100) : 1;
+    const { items: budgetItems, total: finalTotal, subtotal: subtotalWithMarkup } = useMemo(() => {
+        try {
+            return calculateBudget(quantities, prices, project);
+        } catch (e) {
+            console.error("Budget calculation error:", e);
+            return { items: [], total: 0, subtotal: 0 };
+        }
+    }, [quantities, prices, project]);
 
-    const budgetItems = useMemo(() => {
-        const items = [];
-        const allProductIds = new Set([...Object.keys(quantities || {}), ...Object.keys(project?.overrides || {})]);
-
-        allProductIds.forEach(id => {
-            const latestProduct = INITIAL_PRICES.find(p => p.id === id);
-            const stateProduct = prices?.find(p => p.id === id);
-
-            if (!latestProduct && !stateProduct) return;
-
-            const product = latestProduct || stateProduct;
-            const override = project?.overrides?.[id];
-            const qty = override?.qty !== undefined ? override.qty : (quantities[id] || 0);
-
-            if (qty <= 0 && !override) return;
-
-            const basePrice = override?.price !== undefined ? override.price : (stateProduct?.price || latestProduct?.price || 0);
-            const effectivePrice = basePrice * (Number(markupMultiplier) || 1);
-
-            items.push({
-                ...product,
-                price: Number(effectivePrice) || 0,
-                qty: Number(qty) || 0,
-                total: (Number(qty) || 0) * (Number(effectivePrice) || 0),
-                isOverridden: !!override
-            });
-        });
-
-        return items.filter(item => item.qty > 0 || item.isOverridden);
-    }, [quantities, prices, project?.overrides, markupMultiplier]);
-
-    const subtotalWithMarkup = Math.round((budgetItems || []).reduce((acc, item) => acc + (Number(item.total) || 0), 0)) || 0;
-    const finalTotal = Math.round(subtotalWithMarkup * (Number(adjustmentPercentage) < 0 ? (Number(discountFactor) || 1) : 1)) || 0;
-    const adjustmentAmount = finalTotal - subtotalWithMarkup;
+    const { panelsItems, suppliesPages, panelsSubtotal, suppliesSubtotal } = useMemo(() => {
+        const panels = budgetItems.filter(item => item.category === '1. SISTEMA DE PANELES');
+        const supplies = budgetItems.filter(item => item.category !== '1. SISTEMA DE PANELES');
+        const ITEMS_PER_PAGE = 18;
+        const pages = [];
+        if (supplies.length === 0) {
+            pages.push([]);
+        } else {
+            for (let i = 0; i < supplies.length; i += ITEMS_PER_PAGE) {
+                pages.push(supplies.slice(i, i + ITEMS_PER_PAGE));
+            }
+        }
+        return {
+            panelsItems: panels,
+            suppliesPages: pages,
+            panelsSubtotal: panels.reduce((acc, i) => acc + (i.total || 0), 0),
+            suppliesSubtotal: supplies.reduce((acc, i) => acc + (i.total || 0), 0)
+        };
+    }, [budgetItems]);
 
     const formatCurrency = (val) => {
         try {
-            return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(val) || 0);
+            if (val === undefined || val === null || isNaN(val)) return '$ 0';
+            return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(val);
         } catch (e) {
             return '$ 0';
         }
     };
 
-    const [logoBase64, setLogoBase64] = useState(null);
-
-    // Effect to pre-convert the external logo to a base64 string
-    // This solves the "tainted canvas" error in html2canvas when the server doesn't send CORS headers
-    React.useEffect(() => {
-        const fetchLogo = async () => {
-            try {
-                const response = await fetch(PROJECT_LOGO);
-                const blob = await response.blob();
-                const reader = new FileReader();
-                reader.onloadend = () => setLogoBase64(reader.result);
-                reader.readAsDataURL(blob);
-            } catch (e) {
-                console.warn("No se pudo pre-cargar el logo:", e);
-                setLogoBase64(PROJECT_LOGO);
-            }
-        };
-        fetchLogo();
-    }, []);
-
-    const [canvasImages, setCanvasImages] = useState({ snapshots: [], floor: null });
-
-    const handleExportPDF = async () => {
-        try {
-            // Simply trigger the browser's print dialog
-            // The @media print styles in the page will handle the formatting
-            window.print();
-        } catch (err) {
-            console.error("PDF Print Error:", err);
-            alert("No se pudo iniciar el proceso de impresión.");
-        }
-    };
+    const handleExportPDF = () => { window.print(); };
 
     const handleExportImage = async () => {
         setIsGeneratingImage(true);
@@ -171,42 +134,23 @@ const Export = () => {
             window.scrollTo(0, 0);
             const pages = document.querySelectorAll('.pdf-page');
             const canvases = [];
-
             for (let i = 0; i < pages.length; i++) {
-                const canvas = await html2canvas(pages[i], {
-                    scale: 1.5,
-                    useCORS: true,
-                    allowTaint: true,
-                    backgroundColor: '#ffffff',
-                    onclone: (clonedDoc) => {
-                        const clonedPage = clonedDoc.querySelectorAll('.pdf-page')[i];
-                        if (clonedPage && logoBase64) {
-                            const imgs = clonedPage.getElementsByTagName('img');
-                            for (let img of imgs) {
-                                if (img.src === PROJECT_LOGO) img.src = logoBase64;
-                            }
-                        }
-                    }
-                });
+                const canvas = await html2canvas(pages[i], { scale: 1.5, useCORS: true, allowTaint: true, backgroundColor: '#ffffff' });
                 canvases.push(canvas);
             }
-
             const totalHeight = canvases.reduce((sum, canvas) => sum + canvas.height, 0);
             const maxWidth = Math.max(...canvases.map(c => c.width));
-
             const mergedCanvas = document.createElement('canvas');
             mergedCanvas.width = maxWidth;
             mergedCanvas.height = totalHeight;
             const ctx = mergedCanvas.getContext('2d');
             ctx.fillStyle = "#ffffff";
             ctx.fillRect(0, 0, mergedCanvas.width, mergedCanvas.height);
-
             let currentY = 0;
             canvases.forEach(canvas => {
                 ctx.drawImage(canvas, 0, currentY);
                 currentY += canvas.height;
             });
-
             const cleanName = (project.clientName || 'Proyecto').replace(/[^a-z0-9]/gi, '_');
             const link = document.createElement('a');
             link.download = `Cotizacion_${cleanName}_LFP.jpg`;
@@ -221,7 +165,6 @@ const Export = () => {
     };
 
     const isReady = geo && Object.keys(geo).length > 0;
-
     if (!isReady) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-slate-100 flex-col gap-4">
@@ -233,26 +176,17 @@ const Export = () => {
 
     return (
         <div className="bg-slate-50 min-h-screen py-10 print:py-0">
-            {/* Styles for print */}
             <style>{`
                 @media print {
-                    @page { 
-                        size: A4; 
-                        margin: 0mm !important; 
-                    }
-                    * {
-                        -webkit-print-color-adjust: exact !important;
-                        print-color-adjust: exact !important;
-                    }
-                    html, body { 
-                        margin: 0 !important; 
-                        padding: 0 !important; 
+                    @page { size: A4; margin: 0mm !important; }
+                    * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                    html, body {
+                        margin: 0 !important;
+                        padding: 0 !important;
                         width: 210mm !important;
-                        height: auto !important;
                         overflow: visible !important;
                         background: white !important;
                     }
-                    /* Ensure root and main don't add spacing or height constraints */
                     #root, main, .max-w-[1920px], .p-2, .md\\:p-6 {
                         padding: 0 !important;
                         margin: 0 !important;
@@ -260,13 +194,8 @@ const Export = () => {
                         position: static !important;
                         width: 210mm !important;
                     }
-                    #export-container {
-                        display: block !important;
-                        margin: 0 !important;
-                        padding: 0 !important;
-                        width: 210mm !important;
-                    }
-                    .pdf-page { 
+                    #export-container { display: block !important; margin: 0 !important; padding: 0 !important; width: 210mm !important; }
+                    .pdf-page {
                         display: flex !important;
                         flex-direction: column !important;
                         width: 210mm !important;
@@ -276,59 +205,35 @@ const Export = () => {
                         margin: 0 !important;
                         padding: 20mm !important;
                         box-sizing: border-box !important;
-                        page-break-after: always !important; 
+                        page-break-after: always !important;
                         page-break-inside: avoid !important;
                         page-break-before: avoid !important;
                         background: white !important;
                         position: relative !important;
-                        overflow: hidden !important;
+                        overflow: visible !important;
                         border: none !important;
                         box-shadow: none !important;
                     }
-                    .no-break { break-inside: avoid !important; }
-                    /* Force first page to top */
-                    .pdf-page:first-of-type { 
-                        page-break-before: avoid !important; 
-                        margin-top: 0 !important;
-                    }
-                    /* Remove any gaps between pages in print */
-                    #export-container > div {
-                        margin-bottom: 0 !important;
-                    }
+                    .pdf-page:first-of-type { page-break-before: avoid !important; margin-top: 0 !important; }
+                    #export-container > div { margin-bottom: 0 !important; }
                 }
             `}</style>
-            {/* Floating Print Controls */}
+
             <div className="fixed bottom-8 right-8 z-[100] print:hidden flex flex-col gap-3">
-                <button
-                    disabled={isGeneratingImage}
-                    onClick={handleExportPDF}
-                    className="group bg-cyan-600 hover:bg-cyan-500 text-white px-8 py-4 rounded-full font-black uppercase tracking-widest shadow-2xl flex items-center gap-3 transition-all transform active:scale-95 border-4 border-white disabled:opacity-50"
-                >
+                <button disabled={isGeneratingImage} onClick={handleExportPDF} className="group bg-orange-600 hover:bg-orange-500 text-white px-8 py-4 rounded-full font-black uppercase tracking-widest shadow-2xl flex items-center gap-3 transition-all transform active:scale-95 border-4 border-white">
                     {isGeneratingImage ? <Loader2 className="animate-spin" size={20} /> : <FileText size={20} />}
                     {isGeneratingImage ? "Generando..." : "Descargar PDF Pro"}
                 </button>
-
-                <button
-                    disabled={isGeneratingImage}
-                    onClick={handleExportImage}
-                    className="group bg-slate-800 hover:bg-slate-700 text-white px-8 py-3 rounded-full font-black uppercase tracking-[0.15em] text-[10px] shadow-xl flex items-center justify-center gap-3 transition-all transform active:scale-95 border-2 border-white disabled:opacity-50"
-                >
-                    <ImageIcon size={18} />
-                    Exportar como Imagen
+                <button disabled={isGeneratingImage} onClick={handleExportImage} className="group bg-slate-800 hover:bg-slate-700 text-white px-8 py-3 rounded-full font-black uppercase tracking-[0.15em] text-[10px] shadow-xl flex items-center justify-center gap-3 transition-all transform active:scale-95 border-2 border-white">
+                    <ImageIcon size={18} /> Exportar como Imagen
                 </button>
-
-                <div className="bg-white/90 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-200 text-center shadow-lg">
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Formatos de Alta Fidelidad</p>
-                </div>
             </div>
 
             <div id="export-container" className="flex flex-col items-center gap-10 print:gap-0 print:block">
-                {/* PAGE 1: PORTADA CON DATOS DEL CLIENTE */}
-                <div className="pdf-page w-[210mm] min-h-[297mm] bg-white border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none p-[20mm] flex flex-col items-stretch text-slate-900 relative">
-                    <div className="absolute top-0 right-0 w-[150mm] h-[150mm] bg-cyan-50 rounded-full -mr-[50mm] -mt-[50mm] blur-[100px] opacity-50"></div>
-
-                    <div className="flex-1 flex flex-col border-[6px] border-slate-50 p-8 rounded-[60px] relative z-10 overflow-hidden">
-                        {/* Header con Logo */}
+                {/* PAGE 1: PORTADA */}
+                <div className="pdf-page w-[210mm] h-[297mm] bg-white border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none p-[10mm] flex flex-col items-stretch text-slate-900 relative">
+                    <div className="absolute top-0 right-0 w-[150mm] h-[150mm] bg-orange-50 rounded-full -mr-[50mm] -mt-[50mm] blur-[100px] opacity-50"></div>
+                    <div className="flex-1 flex flex-col border-[4px] border-slate-50 p-6 rounded-[50px] relative z-10 overflow-hidden">
                         <div className="flex justify-between items-center mb-8 px-4">
                             <div className="flex items-center gap-4">
                                 <div className="w-20 h-20 bg-white rounded-2xl flex items-center justify-center p-2 shadow-xl border border-slate-100">
@@ -336,7 +241,7 @@ const Export = () => {
                                 </div>
                                 <div className="flex flex-col">
                                     <h1 className="text-2xl font-black tracking-widest text-slate-900 leading-none">MODULADOR SIP</h1>
-                                    <span className="text-base font-black text-cyan-500 uppercase tracking-widest mt-1">{FACTORY_NAME}</span>
+                                    <span className="text-base font-black text-orange-500 uppercase tracking-widest mt-1">{FACTORY_NAME}</span>
                                 </div>
                             </div>
                             <div className="text-right">
@@ -344,398 +249,370 @@ const Export = () => {
                                 <div className="text-sm font-black text-slate-900">{new Date().toLocaleDateString('es-AR')}</div>
                             </div>
                         </div>
-
-                        {/* Título Principal */}
                         <div className="mb-8 text-center">
-                            <h2 className="text-5xl font-black tracking-tighter leading-tight uppercase mb-2">
-                                PROPUESTA <span className="text-cyan-500">TÉCNICA</span>
-                            </h2>
-                            <p className="text-xl font-bold text-slate-500 uppercase tracking-wider">Sistema Constructivo SIP</p>
+                            <h2 className="text-6xl font-black tracking-tighter leading-tight uppercase mb-2">PROPUESTA <span className="text-orange-500">TÉCNICA</span></h2>
+                            <p className="text-2xl font-bold text-slate-500 uppercase tracking-wider">Sistema Constructivo SIP</p>
                         </div>
-
-                        {/* Datos del Cliente */}
                         <div className="bg-gradient-to-br from-slate-50 to-white rounded-[40px] p-8 border-2 border-slate-100 mb-8 shadow-sm">
-                            <h3 className="text-xs font-black text-cyan-600 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
-                                <div className="w-2 h-2 bg-cyan-500 rounded-full"></div>
-                                Información del Cliente
+                            <h3 className="text-xs font-black text-orange-600 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
+                                <div className="w-2 h-2 bg-orange-500 rounded-full"></div> Información del Proyecto
                             </h3>
-                            <div className="grid grid-cols-2 gap-6">
-                                <div>
-                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Cliente</div>
-                                    <div className="text-lg font-black text-slate-900">{project.clientName || 'No especificado'}</div>
-                                </div>
-                                <div>
-                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Dirección</div>
-                                    <div className="text-lg font-black text-slate-900">{project.address || 'No especificada'}</div>
-                                </div>
+                            <div className="grid grid-cols-4 gap-4">
+                                <div><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Cliente</div><div className="text-lg font-black text-slate-900">{project.clientName || 'No especificado'}</div></div>
+                                <div><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">CUIT / CUIL</div><div className="text-lg font-black text-slate-900">{project.cuit || '---'}</div></div>
+                                <div><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Ubicación</div><div className="text-lg font-black text-slate-900">{project.location || 'No especificada'}</div></div>
+                                <div><div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Superficie</div><div className="text-lg font-black text-slate-900 text-orange-600">{geo?.areaPiso?.toFixed(1) || '0'} m²</div></div>
                             </div>
                         </div>
-
-                        {/* Datos del Proyecto */}
-                        <div className="bg-gradient-to-br from-cyan-50 to-white rounded-[40px] p-8 border-2 border-cyan-100 mb-8 shadow-sm">
-                            <h3 className="text-xs font-black text-cyan-600 uppercase tracking-[0.3em] mb-6 flex items-center gap-2">
-                                <div className="w-2 h-2 bg-cyan-500 rounded-full"></div>
-                                Especificaciones del Proyecto
-                            </h3>
-                            <div className="grid grid-cols-3 gap-6">
-                                <div className="text-center">
-                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Superficie Total</div>
-                                    <div className="text-3xl font-black text-cyan-600">{geo?.areaPiso?.toFixed(1) || '0.0'}</div>
-                                    <div className="text-xs font-bold text-slate-500">m²</div>
-                                </div>
-                                <div className="text-center">
-                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Dimensiones</div>
-                                    <div className="text-3xl font-black text-cyan-600">{dimensions.width} × {dimensions.length}</div>
-                                    <div className="text-xs font-bold text-slate-500">metros</div>
-                                </div>
-                                <div className="text-center">
-                                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Altura</div>
-                                    <div className="text-3xl font-black text-cyan-600">{dimensions.height?.toFixed(2)}</div>
-                                    <div className="text-xs font-bold text-slate-500">metros</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Vista 3D */}
-                        <div className="flex-1 bg-slate-900 rounded-[40px] overflow-hidden relative border-4 border-slate-50 shadow-xl min-h-[200px]">
+                        <div className="flex-[3] bg-slate-100 rounded-[50px] overflow-hidden relative border-8 border-white shadow-2xl mb-8">
                             {snapshots && snapshots.length > 0 ? (
-                                <img src={snapshots[0]} className="w-full h-full object-cover" alt="Vista 3D del Proyecto" />
+                                <img src={snapshots[0]} className="w-full h-full object-cover" alt="Vista 3D" />
                             ) : (
-                                <div className="w-full h-full flex flex-col items-center justify-center text-slate-600">
-                                    <Home size={40} strokeWidth={1} />
-                                    <p className="text-xs font-black uppercase tracking-widest mt-2">Vista 3D no generada</p>
-                                </div>
+                                <div className="w-full h-full flex items-center justify-center text-slate-300 uppercase font-black tracking-widest text-xs">Vista 3D proyectada no disponible</div>
                             )}
-                            <div className="absolute top-4 left-4 bg-cyan-600/90 backdrop-blur px-4 py-2 rounded-xl text-xs text-white font-black uppercase tracking-widest shadow-lg">
-                                Render Proyectual 3D
-                            </div>
                         </div>
-
-                        {/* Footer */}
-                        <div className="mt-6 pt-6 border-t border-slate-100 text-center">
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                Documento generado por {FACTORY_NAME} • Sistema de Construcción Industrializada
-                            </p>
-                        </div>
+                        <div className="flex-1"></div>
                     </div>
                 </div>
 
-                {/* PAGE 2: INFORMACIÓN SOBRE EL SISTEMA SIP */}
-                <div className="pdf-page w-[210mm] min-h-[297mm] bg-white border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none p-[20mm] flex flex-col text-slate-900">
+                {/* PAGE 2: SISTEMA SIP */}
+                <div className="pdf-page w-[210mm] h-[297mm] bg-white p-[10mm] flex flex-col text-slate-900 border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none">
                     <PageHeader title="Sistema Constructivo SIP" />
-
                     <div className="flex-1 space-y-6">
-                        {/* Introducción */}
-                        <div className="bg-gradient-to-br from-cyan-50 to-white rounded-[30px] p-6 border-2 border-cyan-100">
-                            <h3 className="text-lg font-black text-cyan-600 uppercase tracking-wider mb-4">¿Qué es el Sistema SIP?</h3>
-                            <p className="text-sm leading-relaxed text-slate-700">
-                                Los <strong>Paneles Estructurales Aislados (SIP)</strong> son un sistema constructivo de última generación que combina
-                                estructura y aislación térmica en un solo elemento. Consisten en un núcleo de espuma de poliestireno expandido (EPS)
-                                de alta densidad, revestido en ambas caras con tableros estructurales OSB (Oriented Strand Board).
-                            </p>
+                        <div className="bg-gradient-to-br from-orange-50 to-white rounded-[30px] p-6 border-2 border-orange-100">
+                            <h3 className="text-lg font-black text-orange-600 uppercase tracking-wider mb-4">¿Qué es el Sistema SIP?</h3>
+                            <p className="text-base leading-relaxed text-slate-700 font-bold uppercase">Los Paneles Estructurales Aislados (SIP) son un sistema de última generación que combina estructura y aislación térmica. Consisten en un núcleo de EPS de densidad estándar revestido en ambas caras con tableros OSB estructurales.</p>
                         </div>
-
-                        {/* Ventajas */}
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-white rounded-[25px] p-5 border-2 border-slate-100 shadow-sm">
-                                <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center mb-3">
-                                    <span className="text-2xl">⚡</span>
+                        <div className="grid grid-cols-2 gap-4 flex-1">
+                            {[
+                                { t: 'Construcción Rápida', d: 'Reducción del tiempo de obra hasta un 70%.', e: '⚡' },
+                                { t: 'Eficiencia Térmica', d: 'Aislación superior, ahorro de hasta 60% en energía.', e: '🌡️' },
+                                { t: 'Alta Resistencia', d: 'Estructura monolítica con excelente respuesta sísmica.', e: '💪' },
+                                { t: 'Sustentable', d: 'Menor impacto ambiental y reducción de residuos.', e: '🌱' }
+                            ].map((v, i) => (
+                                <div key={i} className="bg-white rounded-[25px] p-6 border-2 border-slate-100 shadow-sm flex flex-col items-center text-center justify-center">
+                                    <div className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center mb-4 text-4xl">{v.e}</div>
+                                    <h4 className="text-lg font-black text-slate-900 uppercase tracking-wide mb-3">{v.t}</h4>
+                                    <p className="text-sm text-slate-600 leading-relaxed font-bold uppercase">{v.d}</p>
                                 </div>
-                                <h4 className="text-sm font-black text-slate-900 uppercase tracking-wide mb-2">Construcción Rápida</h4>
-                                <p className="text-xs text-slate-600 leading-relaxed">
-                                    Reducción del tiempo de obra hasta un 70% comparado con sistemas tradicionales.
-                                </p>
-                            </div>
-
-                            <div className="bg-white rounded-[25px] p-5 border-2 border-slate-100 shadow-sm">
-                                <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center mb-3">
-                                    <span className="text-2xl">🌡️</span>
-                                </div>
-                                <h4 className="text-sm font-black text-slate-900 uppercase tracking-wide mb-2">Eficiencia Térmica</h4>
-                                <p className="text-xs text-slate-600 leading-relaxed">
-                                    Aislación térmica superior, reduciendo costos de climatización hasta un 60%.
-                                </p>
-                            </div>
-
-                            <div className="bg-white rounded-[25px] p-5 border-2 border-slate-100 shadow-sm">
-                                <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center mb-3">
-                                    <span className="text-2xl">💪</span>
-                                </div>
-                                <h4 className="text-sm font-black text-slate-900 uppercase tracking-wide mb-2">Alta Resistencia</h4>
-                                <p className="text-xs text-slate-600 leading-relaxed">
-                                    Estructura monolítica con excelente comportamiento sísmico y resistencia estructural.
-                                </p>
-                            </div>
-
-                            <div className="bg-white rounded-[25px] p-5 border-2 border-slate-100 shadow-sm">
-                                <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center mb-3">
-                                    <span className="text-2xl">🌱</span>
-                                </div>
-                                <h4 className="text-sm font-black text-slate-900 uppercase tracking-wide mb-2">Sustentable</h4>
-                                <p className="text-xs text-slate-600 leading-relaxed">
-                                    Menor impacto ambiental, materiales reciclables y reducción de residuos en obra.
-                                </p>
-                            </div>
+                            ))}
                         </div>
                     </div>
+                    <ProjectFooter price={finalTotal} pageNumber={2} />
                 </div>
 
-                {/* PAGE 3: VISTA DE PLANTA */}
-                <div className="pdf-page w-[210mm] min-h-[297mm] bg-white border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none p-[20mm] flex flex-col text-slate-900">
-                    <PageHeader title="Plano de Planta" />
-
-                    <div className="flex-1 bg-slate-50 rounded-[40px] p-8 border-2 border-slate-100 overflow-hidden relative flex flex-col">
-                        {/* Información del plano */}
-                        <div className="flex justify-between items-center mb-6 px-4 shrink-0">
-                            <div>
-                                <h3 className="text-lg font-black text-slate-900 uppercase tracking-wider flex items-center gap-3">
-                                    <div className="w-2 h-4 bg-cyan-500 rounded-full"></div>
-                                    DISEÑO DE PLANTA
-                                </h3>
-                                <p className="text-xs text-slate-500 mt-1">Distribución espacial y modulación SIP</p>
-                            </div>
-                            <div className="text-right">
-                                <div className="text-xs font-bold text-slate-400 uppercase">Escala</div>
-                                <div className="text-sm font-black text-slate-900">1:100</div>
-                            </div>
+                {/* PAGE 3: PLANTA */}
+                <div className="pdf-page w-[210mm] h-[297mm] bg-white p-[10mm] flex flex-col text-slate-900 border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none">
+                    <PageHeader title="Plano de Planta y Eficiencia Energética" />
+                    <div className="flex-1 flex flex-col gap-6">
+                        <div className="grid grid-cols-4 gap-4">
+                            {[
+                                { l: 'Largo', v: `${dimensions.length}m` },
+                                { l: 'Ancho', v: `${dimensions.width}m` },
+                                { l: 'Superficie', v: `${geo?.areaPiso?.toFixed(1) || '0'}m²` },
+                                { l: 'Perímetro', v: `${geo?.perimExt?.toFixed(1) || '0'}m` }
+                            ].map((d, i) => (
+                                <div key={i} className="bg-slate-50 rounded-2xl p-4 border border-slate-100 text-center">
+                                    <div className="text-[9px] font-black text-slate-400 uppercase mb-1 tracking-widest">{d.l}</div>
+                                    <div className="text-2xl font-black text-slate-900 tracking-tighter">{d.v}</div>
+                                </div>
+                            ))}
                         </div>
-
-                        {/* Datos técnicos del plano */}
-                        <div className="grid grid-cols-4 gap-3 mb-6 shrink-0">
-                            <div className="bg-white rounded-xl p-3 border border-slate-200 text-center">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Largo</div>
-                                <div className="text-lg font-black text-cyan-600">{dimensions.length}m</div>
-                            </div>
-                            <div className="bg-white rounded-xl p-3 border border-slate-200 text-center">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ancho</div>
-                                <div className="text-lg font-black text-cyan-600">{dimensions.width}m</div>
-                            </div>
-                            <div className="bg-white rounded-xl p-3 border border-slate-200 text-center">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Superficie</div>
-                                <div className="text-lg font-black text-cyan-600">{geo?.areaPiso?.toFixed(1) || '0'}m²</div>
-                            </div>
-                            <div className="bg-white rounded-xl p-3 border border-slate-200 text-center">
-                                <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">Perímetro</div>
-                                <div className="text-lg font-black text-cyan-600">{geo?.perimExt?.toFixed(1) || '0'}m</div>
-                            </div>
-                        </div>
-
-                        {/* Plano */}
-                        <div className="flex-1 flex items-center justify-center min-h-0 relative z-20 bg-white rounded-[30px] p-6 border-2 border-slate-200">
+                        <div className="flex-1 bg-white border-2 border-slate-100 rounded-[40px] flex items-center justify-center relative overflow-hidden">
                             <FloorPlan isPrint={true} />
                         </div>
-
-                        {/* Grid de fondo */}
-                        <div className="absolute inset-0 opacity-[0.02] pointer-events-none z-10"
-                            style={{ backgroundImage: 'radial-gradient(#000 1.2px, transparent 1.2px)', backgroundSize: '15px 15px' }}></div>
-                    </div>
-                </div>
-
-                {/* PAGE 4: FACHADAS */}
-                <div className="pdf-page w-[210mm] min-h-[297mm] bg-white border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none p-[20mm] flex flex-col text-slate-900">
-                    <PageHeader title="Vistas de Fachada" />
-                    <div className="grid grid-cols-2 gap-8 flex-1">
-                        {['Norte', 'Sur', 'Este', 'Oeste'].map(side => (
-                            <div key={side} className="space-y-4">
-                                <div className="bg-slate-50 rounded-[40px] p-8 border border-slate-200 aspect-[4/3] flex items-center justify-center overflow-hidden">
-                                    <FacadeView
-                                        type={side}
-                                        data={{ ...dimensions, openings, facadeConfigs, project, isPrint: true }}
-                                        scale={20}
-                                    />
+                        <div className="grid grid-cols-2 gap-6">
+                            <div className="bg-slate-900 rounded-[30px] p-6 text-white space-y-4 shadow-xl">
+                                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-orange-400 border-b border-white/10 pb-2 flex items-center gap-2">
+                                    <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
+                                    Memoria Técnica SIP
+                                </h4>
+                                <div className="space-y-3">
+                                    <div className="flex justify-between items-center text-[11px]">
+                                        <span className="text-slate-400 font-bold uppercase tracking-wider">Núcleo Aislante:</span>
+                                        <span className="font-black text-white">70mm EPS Densidad Estándar</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[11px]">
+                                        <span className="text-slate-400 font-bold uppercase tracking-wider">Eficiencia Térmica:</span>
+                                        <span className="font-black text-orange-400">Hasta 60% Ahorro</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[11px]">
+                                        <span className="text-slate-400 font-bold uppercase tracking-wider">Volumen Aislado:</span>
+                                        <span className="font-black text-white">{(geo?.areaPiso * dimensions.height).toFixed(1)} m³ aprox.</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-[11px]">
+                                        <span className="text-slate-400 font-bold uppercase tracking-wider">Anclaje Estructural:</span>
+                                        <span className="font-black text-white">Sistema de Solera Continua</span>
+                                    </div>
                                 </div>
-                                <h3 className="text-center text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Elevación Cardinal: {side}</h3>
                             </div>
-                        ))}
-                    </div>
-                    <div className="mt-8 bg-cyan-900 p-6 rounded-[40px] text-white flex items-start gap-4 border-4 border-white shadow-2xl">
-                        <div className="w-10 h-10 bg-cyan-500 rounded-2xl flex items-center justify-center shrink-0">
-                            <Ruler size={20} />
+                            <div className="bg-orange-50 border border-orange-100 rounded-[30px] p-6 space-y-4">
+                                <h4 className="text-xs font-black uppercase tracking-[0.2em] text-orange-700 border-b border-orange-200 pb-2">Beneficios a Largo Plazo</h4>
+                                <ul className="space-y-2">
+                                    {[
+                                        'Confort térmico constante todo el año.',
+                                        'Reducción drástica en facturas de energía.',
+                                        'Ambiente libre de humedad y moho.',
+                                        'Aislamiento acústico superior para el descanso.',
+                                        'Mayor valor de reventa del inmueble.'
+                                    ].map((b, i) => (
+                                        <li key={i} className="flex items-start gap-3 text-[10px] font-black text-slate-700 uppercase tracking-tight">
+                                            <div className="mt-1 w-1.5 h-1.5 bg-orange-500 rounded-full shrink-0"></div>
+                                            {b}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
                         </div>
-                        <p className="text-[10px] font-medium leading-relaxed opacity-80">
-                            * Representación gráfica de la modulación de paneles SIP (1.22m de ancho) y línea de corte estructural a 2.44m de altura. Los vanos representados corresponden a las dimensiones nominales de las carpinterías solicitadas.
-                        </p>
                     </div>
-
+                    <ProjectFooter price={finalTotal} pageNumber={3} />
                 </div>
 
-                {/* PAGE 3: INGENIERÍA */}
-                <div className="pdf-page w-[210mm] min-h-[297mm] bg-white border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none p-[20mm] flex flex-col text-slate-900">
+                {/* PAGE 4 & 5: FACHADAS */}
+                {[['Norte', 'Sur'], ['Este', 'Oeste']].map((sides, pIdx) => (
+                    <div key={pIdx} className="pdf-page w-[210mm] h-[297mm] bg-white p-[10mm] flex flex-col text-slate-900 border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none">
+                        <PageHeader title={`Fachadas - ${sides[0]} y ${sides[1]}`} />
+                        <div className="flex-1 flex flex-col justify-around py-4">
+                            {sides.map(side => (
+                                <div key={side} className="flex-1 flex flex-col justify-center space-y-4">
+                                    <h3 className="text-center text-[12px] font-black text-slate-900 uppercase tracking-[0.4em]">Fachada: {side}</h3>
+                                    <div className="flex-1 bg-white rounded-[40px] border border-slate-100 p-2 flex items-center justify-center overflow-hidden">
+                                        <FacadeView type={side} data={{ ...dimensions, openings, facadeConfigs, project, isPrint: true }} scale={35} />
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <ProjectFooter price={finalTotal} pageNumber={4 + pIdx} />
+                    </div>
+                ))}
+
+                {/* PAGE 6: MEMORIA */}
+                <div className="pdf-page w-[210mm] h-[297mm] bg-white p-[10mm] flex flex-col text-slate-900 border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none">
                     <PageHeader title="Memoria de Materiales" />
-                    <div className="space-y-6 flex-1">
-                        <section className="space-y-3">
-                            <h3 className="text-[9px] font-black text-slate-900 uppercase tracking-[0.3em] flex items-center gap-3">
-                                <div className="w-6 h-6 bg-cyan-500 rounded-lg flex items-center justify-center text-white"><Home size={14} /></div>
+                    <div className="flex-1 flex flex-col justify-center space-y-12">
+                        <section className="space-y-6">
+                            <h3 className="text-[12px] font-black text-slate-900 uppercase tracking-[0.4em] flex items-center gap-4 text-center justify-center">
+                                <div className="w-8 h-8 bg-orange-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-200"><Home size={18} /></div>
                                 Cómputo de Componentes SIP Principales
                             </h3>
-                            <div className="grid grid-cols-5 gap-2">
+                            <div className="grid grid-cols-5 gap-4 items-stretch">
                                 {[
-                                    { label: 'Muro Exterior', val: geo?.cantMurosExt || 0 },
-                                    { label: 'Muro Interior', val: geo?.cantMurosInt || 0 },
-                                    { label: 'Piso SIP OSB 70mm', val: geo?.cantPiso || 0 },
-                                    { label: 'Techo SIP OSB 70mm', val: geo?.cantTecho || 0 },
-                                    { label: 'TOTAL KIT', val: geo?.totalPaneles || 0, highlight: true }
-                                ].map((item, i) => (
-                                    <div key={i} className={`p-4 rounded-2xl border flex flex-col items-center text-center ${item.highlight ? 'bg-slate-900 border-slate-900 text-white' : 'bg-white border-slate-100'}`}>
-                                        <p className={`text-[7px] font-black uppercase tracking-widest mb-1 ${item.highlight ? 'text-cyan-400' : 'text-slate-400'}`}>{item.label}</p>
-                                        <span className="text-xl font-black tabular-nums leading-none">{item.val}</span>
+                                    { label: 'Muro Ext.', val: geo?.cantMurosExt || 0, show: selections.includeExterior !== false },
+                                    { label: 'Muro Int.', val: geo?.cantMurosInt || 0, show: selections.includeInterior !== false },
+                                    { label: 'Piso SIP', val: geo?.cantPiso || 0, show: foundationType !== 'platea' && selections.includeFloor !== false },
+                                    { label: 'Techo SIP', val: geo?.cantTecho || 0, show: selections.includeRoof !== false },
+                                    { label: 'TOTAL KIT', val: geo?.totalPaneles || 0, highlight: true, show: true }
+                                ].filter(item => item.show).map((item, i) => (
+                                    <div key={i} className={`p-8 rounded-[35px] border-2 flex flex-col items-center text-center transition-all flex-1 h-full min-h-[160px] justify-center ${item.highlight ? 'bg-slate-900 border-slate-900 text-white shadow-xl scale-105' : 'bg-white border-slate-50 shadow-sm'}`}>
+                                        <p className={`text-[9px] font-black uppercase tracking-widest mb-3 ${item.highlight ? 'text-orange-400' : 'text-slate-400'}`}>{item.label}</p>
+                                        <span className="text-4xl font-black tabular-nums leading-none tracking-tighter">{item.val}</span>
                                     </div>
                                 ))}
                             </div>
                         </section>
-
-                        <section className="space-y-3">
-                            <h3 className="text-[9px] font-black text-slate-900 uppercase tracking-[0.3em] flex items-center gap-3">
-                                <div className="w-6 h-6 bg-slate-900 rounded-lg flex items-center justify-center text-white"><Ruler size={14} /></div>
+                        <section className="space-y-6">
+                            <h3 className="text-[12px] font-black text-slate-900 uppercase tracking-[0.4em] flex items-center gap-4 text-center justify-center">
+                                <div className="w-8 h-8 bg-slate-900 rounded-xl flex items-center justify-center text-white shadow-lg shadow-slate-200"><Ruler size={18} /></div>
                                 Especificaciones Métricas de Obra
                             </h3>
-                            <div className="bg-slate-50 rounded-[30px] p-2 border border-slate-200">
-                                <table className="w-full">
-                                    <tbody className="divide-y divide-slate-200">
-                                        {[
-                                            { label: 'Área de Planta', val: geo?.areaPiso?.toFixed(2), unit: 'm²' },
-                                            { label: 'Perímetro Exterior', val: geo?.perimExt?.toFixed(2), unit: 'ml' },
-                                            { label: 'Área Muros', val: geo?.areaMurosBruta?.toFixed(2), unit: 'm²' },
-                                            { label: 'Área Techos', val: geo?.areaTecho?.toFixed(2), unit: 'm²' },
-                                            { label: 'Metros Lineales Divisiones', val: geo?.tabiques?.toFixed(2), unit: 'ml' },
-                                            { label: 'Perímetro Total Aberturas', val: geo?.perimAberturas?.toFixed(2), unit: 'ml' },
-                                            { label: 'Perímetro Total de Paneles (Muros/Piso)', val: geo?.perimLinealPaneles?.toFixed(2), unit: 'ml' },
-                                            ...(geo?.facadeDetails ? Object.entries(geo.facadeDetails).map(([side, area]) => ({
-                                                label: `Área Fachada ${side}`, val: area?.toFixed(2), unit: 'm²'
-                                            })) : [])
-                                        ].map((row, i) => (
-                                            <tr key={i} className="hover:bg-white transition-colors">
-                                                <td className="px-4 py-1.5 text-[8px] font-black text-slate-800 uppercase tracking-widest">{row.label}</td>
-                                                <td className="px-4 py-1.5 text-right">
-                                                    <span className="text-sm font-black text-slate-900 tabular-nums">{row.val}</span>
-                                                    <span className="text-[8px] font-bold text-slate-400 ml-2 uppercase">{row.unit}</span>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                            <div className="grid grid-cols-2 gap-4">
+                                {[
+                                    { label: 'Área de Planta', val: geo?.areaPiso?.toFixed(2), unit: 'm²', icon: <Home size={28} /> },
+                                    { label: 'Perímetro Exterior', val: geo?.perimExt?.toFixed(2), unit: 'ml', icon: <Maximize size={28} /> },
+                                    { label: 'Área Muros Bruta', val: geo?.areaMurosBruta?.toFixed(2), unit: 'm²', icon: <Layout size={28} /> },
+                                    { label: 'Área Techos', val: geo?.areaTecho?.toFixed(2), unit: 'm²', icon: <Layout size={28} /> },
+                                    { label: 'Lineales Tabiques', val: geo?.tabiques?.toFixed(2), unit: 'ml', icon: <Columns size={28} /> },
+                                    { label: 'Perímetro Aberturas', val: geo?.perimAberturas?.toFixed(2), unit: 'ml', icon: <Square size={28} /> }
+                                ].map((row, i) => (
+                                    <div key={i} className="bg-slate-50 rounded-[40px] p-8 border border-slate-100 flex items-center justify-between group hover:bg-white transition-all shadow-sm">
+                                        <div className="flex items-center gap-6">
+                                            <div className="text-orange-500 opacity-20 group-hover:opacity-100 transition-opacity">{row.icon}</div>
+                                            <p className="text-[11px] font-black text-slate-400 uppercase tracking-widest leading-tight uppercase font-black uppercase">{row.label}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <span className="text-3xl font-black text-slate-900 tabular-nums tracking-tighter">{row.val}</span>
+                                            <span className="text-[10px] font-black text-orange-600 ml-2 uppercase tracking-widest">{row.unit}</span>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </section>
                     </div>
-
+                    <ProjectFooter price={finalTotal} pageNumber={6} />
                 </div>
 
-                <div className="pdf-page w-[210mm] min-h-[297mm] bg-white border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none p-[20mm] flex flex-col text-slate-900">
-                    <PageHeader title="Propuesta Económica" />
-                    <div className="flex flex-col gap-4">
-                        <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm overflow-hidden">
-                            <table className="w-full text-left border-collapse">
-                                <thead className="bg-slate-900 text-[8px] font-black text-white uppercase tracking-[0.2em]">
+                {/* PAGE 7: ECONOMICA PANELES */}
+                <div className="pdf-page w-[210mm] h-[297mm] bg-white p-[10mm] flex flex-col text-slate-900 border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none">
+                    <PageHeader title="Propuesta Económica - Sistema SIP" />
+                    <div className="flex-1 flex flex-col gap-4 min-h-0">
+                        <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm overflow-hidden flex-1 overflow-y-auto">
+                            <table className="w-full text-left border-collapse border-b border-slate-100">
+                                <thead className="bg-slate-900 text-[8px] font-black text-white uppercase tracking-[0.2em] sticky top-0">
                                     <tr>
-                                        <th className="px-5 py-3">Descripción Técnica del Item</th>
-                                        <th className="px-2 py-3 text-center">Unid.</th>
-                                        <th className="px-2 py-3 text-center">Cant.</th>
-                                        <th className="px-5 py-3 text-right">Monto Total</th>
+                                        <th className="px-5 py-3">Descripción de Paneles</th>
+                                        <th className="px-2 py-3 text-center">Unidad</th>
+                                        <th className="px-2 py-3 text-center">Cantidad</th>
+                                        <th className="px-2 py-3 text-right">Unitario</th>
+                                        <th className="px-5 py-3 text-right">Total</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 text-[9px]">
-                                    {['1. SISTEMA DE PANELES', '2. MADERAS ESTRUCTURALES (PINO TRATADO)', '3. FIJACIONES Y ANCLAJES', '4. AISLACIÓN Y SELLADO QUÍMICO'].map(category => {
-                                        const categoryItems = budgetItems.filter(item => item.category === category);
-                                        if (categoryItems.length === 0) return null;
-
-                                        return (
-                                            <React.Fragment key={category}>
-                                                <tr className="bg-slate-50">
-                                                    <td colSpan="4" className="px-5 py-2 text-[7px] font-black text-cyan-600 uppercase tracking-widest leading-none">
-                                                        {category}
-                                                    </td>
-                                                </tr>
-                                                {categoryItems.map(item => (
-                                                    <tr key={item.id} className="hover:bg-slate-50 transition-colors">
-                                                        <td className="px-5 py-2 leading-tight">
-                                                            <p className="font-black text-slate-800 uppercase tracking-tighter">{item.name}</p>
-                                                        </td>
-                                                        <td className="px-2 py-2 text-center font-bold text-slate-400 uppercase">{item.unit}</td>
-                                                        <td className="px-2 py-2 text-center leading-none">
-                                                            <span className="bg-slate-100 px-1.5 py-0.5 rounded-lg font-black text-slate-700 tabular-nums">{item.qty}</span>
-                                                        </td>
-                                                        <td className="px-5 py-2 text-right font-black text-slate-900 tabular-nums">{formatCurrency(item.total)}</td>
-                                                    </tr>
-                                                ))}
-                                            </React.Fragment>
-                                        );
-                                    })}
+                                    {panelsItems.map(item => (
+                                        <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                                            <td className="px-5 py-2 font-black text-slate-800 uppercase tracking-tighter">{item.name}</td>
+                                            <td className="px-2 py-2 text-center text-slate-400 font-bold uppercase">{item.unit}</td>
+                                            <td className="px-2 py-2 text-center font-black text-slate-700">{item.qty}</td>
+                                            <td className="px-2 py-2 text-right font-black text-slate-600">{formatCurrency(item.price)}</td>
+                                            <td className="px-5 py-2 text-right font-black text-slate-900">{formatCurrency(item.total)}</td>
+                                        </tr>
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
-
-                        <div className="flex justify-end p-8 bg-slate-50 rounded-[40px] border border-slate-100 shadow-sm no-break">
+                        <div className="flex justify-between items-center p-6 bg-slate-50 rounded-[30px] border border-slate-100 shrink-0">
+                            <div className="text-left"><p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-tight">Valor Neto</p></div>
                             <div className="text-right">
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Inversión Final Proyectada</p>
-                                <p className="text-4xl font-black text-slate-900 tracking-tighter leading-none">{formatCurrency(finalTotal)}</p>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Subtotal Sistema SIP</p>
+                                <p className="text-3xl font-black text-slate-900 tracking-tighter leading-none">{formatCurrency(panelsSubtotal)}</p>
                             </div>
                         </div>
                     </div>
+                    <ProjectFooter price={finalTotal} pageNumber={7} />
                 </div>
 
-                {/* PAGE 5: CONDICIONES */}
-                <div className="pdf-page w-[210mm] min-h-[297mm] bg-white border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none p-[20mm] flex flex-col text-slate-900">
-                    <PageHeader title="Términos y Condiciones" />
+                {/* PAGE 8 & potentially 9: ECONOMICA INSUMOS */}
+                {suppliesPages.map((pageItems, pageIdx) => (
+                    <div key={`supplies-page-${pageIdx}`} className="pdf-page w-[210mm] h-[297mm] bg-white p-[10mm] flex flex-col text-slate-900 border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none">
+                        <PageHeader title={suppliesPages.length > 1 ? `Propuesta Económica - Insumos (Parte ${pageIdx + 1})` : "Propuesta Económica - Insumos y Estructura"} />
+                        <div className="flex-1 flex flex-col gap-4 min-h-0">
+                            <div className="rounded-[30px] border border-slate-200 bg-white shadow-sm overflow-hidden flex-1 overflow-y-auto">
+                                <table className="w-full text-left border-collapse border-b border-slate-100">
+                                    <thead className="bg-slate-900 text-[8px] font-black text-white uppercase tracking-[0.2em] sticky top-0">
+                                        <tr>
+                                            <th className="px-5 py-3">Descripción Insumos y Servicios</th>
+                                            <th className="px-2 py-3 text-center">Unidad</th>
+                                            <th className="px-2 py-3 text-center">Cantidad</th>
+                                            <th className="px-2 py-3 text-right">Unitario</th>
+                                            <th className="px-5 py-3 text-right">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 text-[9px]">
+                                        {(() => {
+                                            const renderedCategories = new Set();
+                                            return pageItems.map((item, idx) => {
+                                                const showCategory = !renderedCategories.has(item.category);
+                                                if (showCategory) renderedCategories.add(item.category);
+                                                return (
+                                                    <React.Fragment key={item.id}>
+                                                        {showCategory && (
+                                                            <tr className="bg-slate-50">
+                                                                <td colSpan="5" className="px-5 py-2 text-[7px] font-black text-orange-600 uppercase tracking-widest">
+                                                                    {item.category} {pageIdx > 0 && idx === 0 ? '(Continuación)' : ''}
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                        <tr className="hover:bg-slate-50 transition-colors">
+                                                            <td className="px-5 py-2 font-black text-slate-800 uppercase tracking-tighter">{item.name}</td>
+                                                            <td className="px-2 py-2 text-center text-slate-400 font-bold uppercase uppercase font-black uppercase tracking-widest">{item.unit}</td>
+                                                            <td className="px-2 py-2 text-center font-black text-slate-700 tracking-tighter">{item.qty}</td>
+                                                            <td className="px-2 py-2 text-right font-black text-slate-600 tracking-tighter">{formatCurrency(item.price)}</td>
+                                                            <td className="px-5 py-2 text-right font-black text-slate-900 tracking-tighter">{formatCurrency(item.total)}</td>
+                                                        </tr>
+                                                    </React.Fragment>
+                                                );
+                                            });
+                                        })()}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {pageIdx === suppliesPages.length - 1 && (
+                                <div className="flex justify-end p-6 bg-slate-50 rounded-[30px] border border-slate-100 shrink-0">
+                                    <div className="text-right">
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Subtotal Insumos y Estructura</p>
+                                        <p className="text-3xl font-black text-slate-900 tracking-tighter leading-none">{formatCurrency(suppliesSubtotal)}</p>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                        <ProjectFooter price={finalTotal} pageNumber={8 + pageIdx} hidePrice={pageIdx < suppliesPages.length - 1} />
+                    </div>
+                ))}
+
+                {/* PAGE FINAL: RESUMEN */}
+                <div className="pdf-page w-[210mm] h-[297mm] bg-white p-[10mm] flex flex-col text-slate-900 border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none">
+                    <PageHeader title="Resumen de Inversión" />
                     <div className="flex-1 space-y-8">
-                        <section className="bg-slate-900 rounded-[40px] p-10 text-white space-y-6 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/10 rounded-full -mr-24 -mt-24 blur-3xl"></div>
-                            <h3 className="text-xl font-black uppercase tracking-tighter text-cyan-400 flex items-center gap-3">
-                                <div className="w-8 h-8 bg-cyan-500/20 rounded-xl flex items-center justify-center"><CheckCircle2 size={24} /></div>
-                                Ventajas del Sistema SIP
-                            </h3>
-                            <div className="text-sm font-medium leading-relaxed opacity-90 pl-11 whitespace-pre-line">
-                                {project?.projectInfo?.benefits || defaults?.benefits || 'Nuestros paneles ofrecen una aislación térmica superior y una rapidez de montaje inigualable en seco.'}
-                            </div>
-                        </section>
-
-                        <section className="bg-slate-50 rounded-[40px] p-10 space-y-6 border-2 border-slate-100 flex-1">
-                            <h3 className="text-xl font-black uppercase tracking-tighter text-slate-800 flex items-center gap-3">
-                                <div className="w-8 h-8 bg-slate-900 rounded-xl flex items-center justify-center text-white"><FileText size={20} /></div>
-                                Condiciones Comerciales
-                            </h3>
-                            <div className="text-sm font-bold leading-relaxed text-slate-500 pl-11 whitespace-pre-line">
-                                {project?.projectInfo?.extraNotes || defaults?.extraNotes || 'La presente cotización tiene una vigencia de 15 días corridos.'}
-                            </div>
-                        </section>
-                    </div>
-
-
-                </div>
-
-                {/* PAGE 6: GALERÍA (SI EXISTE) */}
-                {snapshots && snapshots.length > 0 && (
-                    <div className="pdf-page w-[210mm] min-h-[297mm] bg-white border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none p-[20mm] flex flex-col text-slate-900">
-                        <PageHeader title="Galería de Vistas" />
-                        <div className="flex-1 flex flex-col justify-center gap-8">
-                            <div className="grid grid-cols-2 gap-6">
-                                {Array.from({ length: 6 }).map((_, i) => {
-                                    const snap = snapshots[i];
-                                    return (
-                                        <div key={i} className="aspect-video bg-slate-100 rounded-[35px] overflow-hidden border border-slate-200 shadow-md flex items-center justify-center">
-                                            {snap ? (
-                                                <img src={snap} className="w-full h-full object-cover" alt={`Vista ${i + 1}`} />
-                                            ) : (
-                                                <span className="text-slate-400 text-sm font-medium">No image</span>
-                                            )}
+                        <div className="bg-slate-50 rounded-[40px] p-8 border-2 border-slate-100">
+                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 flex items-center gap-3">
+                                <div className="w-1.5 h-6 bg-orange-500 rounded-full"></div> Beneficios por Modalidad de Pago
+                            </h4>
+                            <div className="space-y-4">
+                                {[
+                                    { t: 'Pronto Pago (Cierre en 7 días)', v: '6% OFF', c: 'text-emerald-600', s: finalTotal * 0.06, show: project.projectInfo?.showEarlyPaymentDiscount !== false },
+                                    { t: 'Por Volumen (Compras > 20 paneles)', v: '8% OFF', c: 'text-blue-600', s: finalTotal * 0.08, show: true },
+                                    { t: 'Efectivo (Pago en sede central)', v: '12% OFF', c: 'text-purple-600', s: finalTotal * 0.12, show: true }
+                                ].filter(b => b.show).map((b, i) => (
+                                    <div key={i} className="flex justify-between items-center border-b border-slate-200 pb-3 last:border-0 last:pb-0">
+                                        <div className="flex flex-col">
+                                            <span className="text-[11px] font-black text-slate-800 uppercase tracking-tight">{b.t}</span>
+                                            <span className={`text-[10px] font-bold ${b.c} uppercase mt-0.5`}>{b.v} Aplicado</span>
                                         </div>
-                                    );
-                                })}
+                                        <div className="text-right">
+                                            <span className="text-[9px] font-black text-slate-400 uppercase block leading-none mb-1">Ahorro Estimado:</span>
+                                            <span className="text-lg font-black text-slate-900 tabular-nums">{formatCurrency(b.s)}</span>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
+                        <div className="bg-slate-900 rounded-[50px] p-[40px] border-4 border-white flex-col relative shadow-2xl overflow-hidden">
+                            <h3 className="text-xl font-black uppercase tracking-tighter text-white flex items-center gap-4 mb-8 relative z-10">
+                                <div className="w-2 h-8 bg-orange-500 rounded-full"></div> Resumen de Inversión
+                            </h3>
+                            <div className="space-y-4 relative z-10 mb-8">
+                                <div className="flex justify-between items-center py-4 border-b border-white/10 uppercase font-black uppercase">
+                                    <span className="text-slate-400 font-bold uppercase tracking-widest text-xs tracking-tighter">VALOR TOTAL BRUTO (KIT COMPLETO)</span>
+                                    <span className="text-2xl font-black text-white">{formatCurrency(finalTotal)}</span>
+                                </div>
+                                {[
+                                    { t: 'CON DESCUENTO 6% (PRONTO PAGO)', d: 0.06, c: 'text-emerald-400', show: project.projectInfo?.showEarlyPaymentDiscount !== false },
+                                    { t: 'CON DESCUENTO 8% (VOLUMEN)', d: 0.08, c: 'text-blue-400', show: true },
+                                    { t: 'CON DESCUENTO 12% (PAGO EFECTIVO)', d: 0.12, c: 'text-orange-400', show: true }
+                                ].filter(b => b.show).map((b, i) => (
+                                    <div key={i} className="flex justify-between items-center py-3 border-b border-white/5 uppercase font-black uppercase uppercase tracking-widest">
+                                        <span className="text-slate-500 font-bold uppercase tracking-wider text-[10px]">{b.t}</span>
+                                        <span className={`text-xl font-black ${b.c}`}>{formatCurrency(finalTotal * (1 - b.d))}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 relative z-10">
+                                {['Vigencia: 7 días corridos.', 'Precios netos (No incluyen IVA).', 'Descuentos sujetos a validación de compra.', 'No incluye flete ni descarga.'].map((c, i) => (
+                                    <div key={i} className="flex items-center gap-3 uppercase font-black uppercase"><div className="w-1.5 h-1.5 bg-orange-500 rounded-full"></div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{c}</p></div>
+                                ))}
+                            </div>
+                        </div>
+                        <ProjectFooter price={finalTotal} pageNumber={8 + suppliesPages.length} />
+                    </div>
+                </div>
 
-
+                {/* GALLERIA */}
+                {snapshots && snapshots.length > 0 && (
+                    <div className="pdf-page w-[210mm] h-[297mm] bg-white p-[10mm] flex flex-col text-slate-900 border border-slate-200 shadow-2xl mb-10 print:mb-0 print:border-none">
+                        <PageHeader title="Galería de Vistas" />
+                        <div className="flex-1 flex flex-col gap-6 overflow-hidden uppercase font-black uppercase uppercase font-black uppercase">
+                            <div className="grid grid-cols-2 grid-rows-3 gap-4 flex-1">
+                                {Array.from({ length: 6 }).map((_, i) => (
+                                    <div key={i} className="bg-slate-50 rounded-[35px] overflow-hidden border border-slate-200 shadow-md flex items-center justify-center relative h-full">
+                                        {snapshots[i] ? <img src={snapshots[i]} className="w-full h-full object-cover" alt={`Vista ${i + 1}`} /> : <span className="text-slate-300 text-[10px] font-black uppercase tracking-widest tracking-tighter">Vista no generada</span>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <ProjectFooter price={finalTotal} pageNumber={8 + suppliesPages.length + 1} hidePrice={false} />
                     </div>
                 )}
             </div>
-            {/* Added spacer to prevent cutting off at the bottom */}
-            <div className="h-32 print:hidden"></div>
-            {/* HIDDEN REPORT TEMPLATE */}
-            <PDFReportTemplate
-                snapshots3D={canvasImages.snapshots}
-                floorPlanImage={canvasImages.floor}
-                geo={geo}
-                quantities={quantities}
-            />
+            <div className="h-32 print:hidden uppercase font-black uppercase"></div>
         </div>
     );
 };

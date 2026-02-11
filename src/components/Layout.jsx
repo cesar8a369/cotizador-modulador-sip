@@ -10,7 +10,7 @@ const NavItem = ({ to, icon: Icon, label, active }) => (
         className={clsx(
             "flex items-center gap-2 px-3 py-2 md:px-4 md:py-2 rounded-xl transition-all duration-200 whitespace-nowrap",
             active
-                ? "bg-cyan-500 text-white shadow-lg shadow-cyan-500/20"
+                ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20"
                 : "text-slate-400 hover:text-white hover:bg-slate-800"
         )}
     >
@@ -32,14 +32,14 @@ const Layout = () => {
                     {/* Logo Area */}
                     <div className="flex items-center gap-4 self-start md:self-auto group">
                         <div className="relative">
-                            <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-blue-600 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
+                            <div className="absolute -inset-1 bg-gradient-to-r from-orange-500 to-amber-600 rounded-xl blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200"></div>
                             <div className="relative w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg border border-slate-700/50 overflow-hidden p-1">
                                 <img src={PROJECT_LOGO} alt="Logo" className="w-full h-full object-contain" />
                             </div>
                         </div>
                         <div className="flex flex-col">
                             <h1 className="text-white font-black text-xs md:text-sm lg:text-base tracking-[0.2em] uppercase leading-none">
-                                MODULADOR <span className="text-cyan-400">SIP</span>
+                                MODULADOR <span className="text-orange-400">SIP</span>
                             </h1>
                             <span className="text-[8px] md:text-[10px] text-slate-500 font-bold uppercase tracking-[0.1em] mt-1">
                                 LA FÁBRICA DEL PANEL
@@ -62,7 +62,7 @@ const Layout = () => {
                             <p className="text-slate-400 text-xs uppercase tracking-wider">Usuario</p>
                             <p className="text-white text-sm font-semibold">Ingeniero Senior</p>
                         </div>
-                        <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-cyan-400">
+                        <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-orange-400">
                             <Users size={20} />
                         </div>
                     </div>
@@ -79,15 +79,15 @@ const Layout = () => {
                 <div className="max-w-[1920px] mx-auto px-6">
                     <div className="flex flex-col md:flex-row items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
-                            <div className="w-6 h-6 bg-gradient-to-br from-cyan-400 to-blue-500 rounded flex items-center justify-center">
+                            <div className="w-6 h-6 bg-gradient-to-br from-orange-400 to-amber-500 rounded flex items-center justify-center">
                                 <Check size={16} className="text-white font-bold" strokeWidth={3} />
                             </div>
                             <div>
-                                <p className="text-white text-sm font-semibold">Desarrollado por <span className="text-cyan-400">ResolvIA</span></p>
-                                <p className="text-slate-400 text-xs">Soluciones potenciadas con Inteligencia Artificial</p>
+                                <p className="text-white text-sm font-semibold uppercase tracking-widest leading-none">LA FÁBRICA DEL PANEL</p>
+                                <p className="text-slate-500 text-[10px] font-bold uppercase tracking-tight mt-1">Soporte Técnico y Comercial Autorizado</p>
                             </div>
                         </div>
-                        <a href="mailto:consultora.resolvia@gmail.com" className="flex items-center gap-2 text-slate-400 hover:text-cyan-400 transition-colors">
+                        <a href="mailto:consultora.resolvia@gmail.com" className="flex items-center gap-2 text-slate-400 hover:text-orange-400 transition-colors">
                             <Mail size={16} />
                             <span className="text-sm">consultora.resolvia@gmail.com</span>
                         </a>

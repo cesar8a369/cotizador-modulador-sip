@@ -1,11 +1,12 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useStore } from '../../store/useStore';
-import { Square, DoorOpen, Maximize } from 'lucide-react';
+import { Square, DoorOpen, Maximize, Trash2, X, Settings } from 'lucide-react';
 
 const FacadeView = ({ type, data, scale = 20, onMaximize, isMaximized = false }) => {
-    const { width = 0, length = 0, openings = [], facadeConfigs = {}, project = {} } = data || {};
-    const { addOpening, removeOpening, updateOpening } = useStore();
-    const recesses = project?.recesses || [];
+    const { width = 0, length = 0, openings = [], facadeConfigs = {} } = data || {};
+    const { addOpening, removeOpening, updateOpening, togglePerimeterVisibility, project, activeOpeningId, setActiveOpeningId } = useStore();
+
+    const isVisible = project.perimeterVisibility?.[type] !== false;
 
     const config = facadeConfigs[type] || { type: 'recto', hBase: 2.44, hMax: 2.44 };
     const h1 = config.hBase;
@@ -14,215 +15,294 @@ const FacadeView = ({ type, data, scale = 20, onMaximize, isMaximized = false })
     const isFrontBack = type === 'Norte' || type === 'Sur';
     const wallWidth = isFrontBack ? width : length;
 
-    // Canvas dimensions
-    const viewMaxHeight = Math.max(h1, h2, 2.44);
-    const viewHeight = Math.max(viewMaxHeight * scale, 50); // Minimum height to avoid collapse
-
-    // Outside View Logic: Mirror the horizontal axis
-    const isFlipped = true;
-
-    // Filter and Process openings for this facade
+    // UseMemo for facade openings to improve performance and avoids re-renders
     const facadeOpenings = useMemo(() => {
-        return (openings || [])
-            .filter(o => o.side === type)
-            .map(o => {
-                let globalX = o.x;
-                if (o.recessId) {
-                    const r = recesses.find(rc => rc.id === o.recessId);
-                    if (r && o.recessWall === 'back') {
-                        // For 'back' walls, o.x is relative to the recess width
-                        globalX = r.x + o.x;
-                    } else {
-                        // Hide lateral openings in direct facade view
-                        return null;
-                    }
-                }
+        return (openings || []).filter(o => o.side === type);
+    }, [openings, type]);
 
-                // Mirror logic for 'Outside View'
-                const renderX = isFlipped ? (wallWidth - globalX - o.width) : globalX;
-                return { ...o, renderX };
-            })
-            .filter(Boolean);
-    }, [openings, type, width, length, recesses, isFlipped]);
+    const stats = useMemo(() => {
+        let area = 0;
+        if (config.type === 'recto') area = wallWidth * h1;
+        else if (config.type === 'inclinado') area = wallWidth * (h1 + h2) / 2;
+        else if (config.type === '2-aguas') area = wallWidth * h1 + (wallWidth * (h2 - h1) / 2);
 
-    // Interaction State
-    const [activeOpeningId, setActiveOpeningId] = useState(null);
-    const [interaction, setInteraction] = useState(null);
+        const panels = Math.ceil(area / (1.22 * 2.44));
+        const openingML = facadeOpenings.reduce((acc, o) => acc + (o.width + o.height) * 2, 0);
+
+        return { area, panels, openingML };
+    }, [wallWidth, h1, h2, config.type, facadeOpenings]);
+
+    const [interaction, setInteraction] = useState(null); // 'move' | 'resize'
 
     const handleInteraction = (e) => {
-        if (interaction && activeOpeningId) {
-            const scaleInv = 1 / scale;
-            let dx = e.movementX * scaleInv;
-            const dy = e.movementY * scaleInv;
+        if (!interaction || !activeOpeningId) return;
 
-            if (isFlipped) dx = -dx; // Invert dx for mirrored view
+        const scaleInv = 1 / scale;
+        const dx = e.movementX * scaleInv;
+        const dy = e.movementY * scaleInv;
 
-            const current = openings.find(o => o.id === activeOpeningId);
-            if (!current) return;
+        const current = openings.find(o => o.id === activeOpeningId);
+        if (!current) return;
 
-            const r = current.recessId ? recesses.find(rc => rc.id === current.recessId) : null;
-            const limit = r ? r.width : wallWidth;
-
-            if (interaction === 'move') {
-                updateOpening(activeOpeningId, {
-                    x: Math.max(0, Math.min(limit - current.width, current.x + dx)),
-                    y: Math.max(0, Math.min(viewMaxHeight - current.height, current.y - dy))
-                });
-            } else if (interaction === 'resize') {
-                updateOpening(activeOpeningId, {
-                    width: Math.max(0.4, Math.min(limit - current.x, current.width + dx)),
-                    height: Math.max(0.4, Math.min(viewMaxHeight - current.y, current.height - dy))
-                });
-            }
+        if (interaction === 'move') {
+            updateOpening(activeOpeningId, {
+                x: Math.max(0, Math.min(wallWidth - current.width, current.x + dx)),
+                y: Math.max(0, Math.min(Math.max(h1, h2) - current.height, current.y - dy))
+            });
+        } else if (interaction === 'resize') {
+            updateOpening(activeOpeningId, {
+                width: Math.max(0.4, Math.min(wallWidth - current.x, current.width + dx)),
+                height: Math.max(0.4, Math.min(Math.max(h1, h2) - current.y, current.height - dy))
+            });
         }
     };
 
     useEffect(() => {
-        const up = () => { setInteraction(null); setActiveOpeningId(null); };
+        const stop = () => { setInteraction(null); }; // Don't clear activeOpeningId here to allow keyboard deletion
         if (interaction) {
-            window.addEventListener('mouseup', up);
             window.addEventListener('mousemove', handleInteraction);
+            window.addEventListener('mouseup', stop);
         }
         return () => {
-            window.removeEventListener('mouseup', up);
             window.removeEventListener('mousemove', handleInteraction);
+            window.removeEventListener('mouseup', stop);
         };
-    }, [interaction, activeOpeningId, openings]);
+    }, [interaction, activeOpeningId, openings, h1, h2, wallWidth]);
 
-    // Wall Points for Polygon (Mirroring shape if needed)
+    // Keyboard listener for deletion moved to FloorPlan or handled globally if needed.
+    // However, FacadeView is a subcomponent, so we'll keep its own listener for focus but use store ID.
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (activeOpeningId && (e.key === 'Delete' || e.key === 'Backspace')) {
+                removeOpening(activeOpeningId);
+                setActiveOpeningId(null);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [activeOpeningId, removeOpening, setActiveOpeningId]);
+
+    // Points for the wall polygon
     const points = [];
-    points.push([0, 0]);
-    points.push([wallWidth * scale, 0]);
+    points.push(`0,0`);
+    points.push(`${wallWidth * scale},0`);
 
     if (config.type === 'recto') {
-        points.push([wallWidth * scale, h1 * scale]);
-        points.push([0, h1 * scale]);
+        points.push(`${wallWidth * scale},${h1 * scale}`);
+        points.push(`0,${h1 * scale}`);
     } else if (config.type === 'inclinado') {
-        // Swap h1/h2 visually if flipped
-        points.push([wallWidth * scale, (isFlipped ? h1 : h2) * scale]);
-        points.push([0, (isFlipped ? h2 : h1) * scale]);
+        points.push(`${wallWidth * scale},${h2 * scale}`);
+        points.push(`0,${h1 * scale}`);
     } else if (config.type === '2-aguas') {
-        points.push([wallWidth * scale, h1 * scale]);
-        points.push([(wallWidth * scale) / 2, h2 * scale]);
-        points.push([0, h1 * scale]);
+        points.push(`${wallWidth * scale},${h1 * scale}`);
+        points.push(`${(wallWidth * scale) / 2},${h2 * scale}`);
+        points.push(`0,${h1 * scale}`);
     }
 
-    const wallPointsString = points.map(p => `${p[0]},${viewHeight - p[1]}`).join(' ');
+    const svgHeight = Math.max(h1, h2, 2.44) * scale + 40;
+    const polygonPoints = points.map(p => {
+        const [x, y] = p.split(',').map(Number);
+        return `${x},${svgHeight - y - 20}`;
+    }).join(' ');
 
-    // --- CALCULATIONS FOR UI ---
-    const hAverage = (h1 + h2) / 2;
-    const wallArea = wallWidth * hAverage;
-    const PANEL_SURFACE = 1.22 * 2.44;
-    const panelCount = Math.ceil(wallArea / PANEL_SURFACE);
-    const panelPerimeter = panelCount * 7.32;
+    // Manual Panel Grid (1.22 x 2.44) starting from bottom
+    const gridCols = Math.ceil(wallWidth / 1.22);
+    const gridRows = Math.ceil(Math.max(h1, h2) / 2.44);
+    const panelElements = [];
+    for (let c = 0; c < gridCols; c++) {
+        for (let r = 0; r < gridRows; r++) {
+            panelElements.push(
+                <rect
+                    key={`p-${c}-${r}`}
+                    x={c * 1.22 * scale}
+                    y={svgHeight - (r + 1) * 2.44 * scale - 20}
+                    width={1.22 * scale}
+                    height={2.44 * scale}
+                    fill="none"
+                    stroke="#e2e8f0"
+                    strokeWidth="0.5"
+                />
+            );
+        }
+    }
 
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col h-full relative group" style={{ minHeight: '300px' }}>
-            <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
-                <div className="bg-slate-100/80 backdrop-blur px-2 py-0.5 rounded text-[10px] uppercase font-bold text-slate-500 border border-slate-200 flex items-center gap-2 shadow-sm">
-                    Fachada {type}
-                    <span className="text-slate-300">|</span>
-                    <span className="text-[9px] text-slate-400">{wallWidth.toFixed(1)}m</span>
+        <div className={`bg-white rounded-2xl border border-slate-200 overflow-hidden flex flex-col h-full relative group transition-all duration-300 ${!isVisible ? 'bg-slate-100 ring-1 ring-slate-200' : ''}`}>
+
+            {/* Top Badges and Controls */}
+            <div className="absolute top-3 left-3 right-3 z-[40] flex items-center justify-between pointer-events-none">
+                <div className="flex items-center gap-2 pointer-events-auto">
+                    <div className="bg-slate-900/80 backdrop-blur text-white px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider shadow-lg flex items-center gap-2">
+                        <div className="w-2 h-2 bg-orange-500 rounded-full" />
+                        Fachada {type}
+                    </div>
                 </div>
-                <div className="bg-cyan-500/10 text-cyan-600 text-[8px] font-black uppercase px-2 py-0.5 rounded border border-cyan-500/20 w-fit">
-                    Vista Exterior
+
+                <div className="flex flex-col items-end gap-2 pointer-events-auto">
+                    <div className="flex items-center gap-2">
+                        {!isMaximized && !isVisible && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); togglePerimeterVisibility(type); }}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-tight transition-all shadow-lg border-2 bg-white text-slate-400 border-slate-200 hover:border-slate-300"
+                            >
+                                Excluida
+                                <div className="w-2 h-2 rounded-full bg-slate-300" />
+                            </button>
+                        )}
+                        {!isMaximized && isVisible && (
+                            <div className="flex gap-1.5 p-1 bg-white/90 backdrop-blur border border-slate-200 rounded-2xl shadow-xl">
+                                <button onClick={() => addOpening(type, 'window')} title="Añadir Ventana" className="p-2 text-slate-600 hover:text-cyan-500 hover:bg-slate-50 rounded-xl transition-all"><Square size={16} /></button>
+                                <button onClick={() => addOpening(type, 'door')} title="Añadir Puerta" className="p-2 text-slate-600 hover:text-cyan-500 hover:bg-slate-50 rounded-xl transition-all"><DoorOpen size={16} /></button>
+                                <button onClick={onMaximize} title="Maximizar" className="p-2 text-slate-600 hover:text-cyan-500 hover:bg-slate-50 rounded-xl transition-all"><Maximize size={16} /></button>
+                                <button onClick={() => togglePerimeterVisibility(type)} title="Excluir Fachada" className="p-2 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-xl transition-all border-l border-slate-100 ml-1"><Trash2 size={16} /></button>
+                            </div>
+                        )}
+                    </div>
+
+                    {isMaximized && isVisible && (
+                        <div className="bg-white/90 backdrop-blur border border-slate-200 px-3 py-2 rounded-xl shadow-lg flex gap-4 items-center animate-in slide-in-from-top-1">
+                            <div className="flex flex-col">
+                                <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Área Fachada</span>
+                                <span className="text-[11px] font-black text-slate-800">{stats.area.toFixed(2)} m²</span>
+                            </div>
+                            <div className="w-px h-5 bg-slate-200" />
+                            <div className="flex flex-col">
+                                <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Paneles SIP</span>
+                                <span className="text-[11px] font-black text-slate-800">{stats.panels} Unid.</span>
+                            </div>
+                            <div className="w-px h-5 bg-slate-200" />
+                            <div className="flex flex-col">
+                                <span className="text-[7px] font-black text-slate-400 uppercase tracking-widest">Aberturas ML</span>
+                                <span className="text-[11px] font-black text-slate-800">{stats.openingML.toFixed(2)} ml</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
-            {/* NEW TECH DATA OVERLAY */}
-            <div className="absolute bottom-2 left-2 z-10 flex flex-col gap-0.5">
-                <div className="bg-slate-900/90 backdrop-blur px-2 py-1 rounded text-[7px] font-black text-cyan-400 border border-white/10 flex flex-col gap-0.5 shadow-xl">
-                    <div className="flex justify-between gap-4">
-                        <span className="text-white/40 uppercase tracking-tighter">ÁREA TOTAL:</span>
-                        <span className="text-white">{wallArea.toFixed(2)} m²</span>
-                    </div>
-                    <div className="flex justify-between gap-4">
-                        <span className="text-white/40 uppercase tracking-tighter">CANT. PANELES:</span>
-                        <span className="text-white">{panelCount} u.</span>
-                    </div>
-                    <div className="flex justify-between gap-4 border-t border-white/5 pt-0.5 mt-0.5 font-bold">
-                        <span className="text-cyan-500/60 uppercase tracking-tighter">PERÍM. PANELES:</span>
-                        <span className="text-cyan-400">{panelPerimeter.toFixed(2)} ml</span>
-                    </div>
-                </div>
-            </div>
 
-            {onMaximize && !isMaximized && !data.isPrint && (
-                <div className="absolute top-2 right-2 z-10 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button onClick={() => addOpening(type, 'window')} className="bg-white shadow-sm p-1.5 rounded-lg text-slate-600 hover:text-cyan-500 hover:bg-cyan-50 border border-slate-200" title="Ventana"><Square size={16} /></button>
-                    <button onClick={() => addOpening(type, 'door')} className="bg-white shadow-sm p-1.5 rounded-lg text-slate-600 hover:text-cyan-500 hover:bg-cyan-50 border border-slate-200" title="Puerta"><DoorOpen size={16} /></button>
-                    <button onClick={onMaximize} className="bg-white shadow-sm p-1.5 rounded-lg text-slate-600 hover:text-cyan-500 hover:bg-cyan-50 border border-slate-200 ml-1"><Maximize size={16} /></button>
-                </div>
-            )}
 
-            <div className="flex-1 flex items-center justify-center p-6 bg-slate-50/30">
-                <svg
-                    width="100%"
-                    height="100%"
-                    viewBox={`-30 -20 ${Number(wallWidth * scale + 60) || 100} ${Number(viewHeight + 60) || 100}`}
-                    preserveAspectRatio="xMidYMid meet"
-                    className="overflow-visible"
-                    style={{ filter: data.isPrint ? 'none' : 'drop-shadow(0 4px 6px rgba(0,0,0,0.05))' }}
-                >
+            <div className={`flex-1 flex items-center justify-center p-4 bg-slate-50/50 transition-all duration-300 relative ${!isVisible ? 'bg-slate-200/50 grayscale border-dashed border-2 m-4 rounded-xl' : ''}`} onMouseDown={() => isVisible && setActiveOpeningId(null)}>
+                {!isVisible && (
+                    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-100/40 backdrop-blur-[2px] rounded-xl">
+                        <div className="bg-rose-600 text-white px-4 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] shadow-xl animate-pulse">
+                            Fachada Excluida
+                        </div>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); togglePerimeterVisibility(type); }}
+                            className="mt-4 text-[10px] font-black text-slate-500 hover:text-emerald-600 underline underline-offset-4 uppercase tracking-widest decoration-2"
+                        >
+                            Habilitar para presupuesto
+                        </button>
+                    </div>
+                )}
+                <svg width="100%" height="100%" viewBox={`-10 0 ${wallWidth * scale + 20} ${svgHeight}`} preserveAspectRatio="xMidYMid meet" className={!isVisible ? 'opacity-20' : ''}>
                     <defs>
-                        <pattern id={`sipPanel-${type}`} x="0" y={viewHeight} width={1.22 * scale} height={2.44 * scale} patternUnits="userSpaceOnUse">
-                            <rect width={1.22 * scale} height={2.44 * scale} fill="white" stroke="#e2e8f0" strokeWidth="0.5" />
-                        </pattern>
-                        <mask id={`mask-${type}`}>
-                            <polygon points={wallPointsString} fill="white" />
-                            {facadeOpenings.map(o => (
-                                <rect key={o.id} x={o.renderX * scale} y={viewHeight - (o.y + o.height) * scale} width={o.width * scale} height={o.height * scale} fill="black" />
-                            ))}
-                        </mask>
+                        <clipPath id={`clip-${type}`}>
+                            <polygon points={polygonPoints} />
+                        </clipPath>
                     </defs>
 
-                    <polygon points={wallPointsString} fill={`url(#sipPanel-${type})`} stroke="#334155" strokeWidth="2" mask={`url(#mask-${type})`} />
+                    {/* Wall Background */}
+                    <polygon points={polygonPoints} fill="white" stroke="#334155" strokeWidth="2" />
 
-                    {/* Openings Render */}
+                    {/* Manual Panels with clipPath */}
+                    <g clipPath={`url(#clip-${type})`}>
+                        {panelElements}
+                    </g>
+
+                    {/* Openings */}
                     {facadeOpenings.map(o => (
                         <g
                             key={o.id}
-                            transform={`translate(${o.renderX * scale}, ${viewHeight - (o.y + o.height) * scale})`}
-                            className={`${data.isPrint ? '' : 'cursor-move group/opening'}`}
-                            onMouseDown={(e) => { if (data.isPrint) return; e.stopPropagation(); setActiveOpeningId(o.id); setInteraction('move'); }}
+                            transform={`translate(${o.x * scale}, ${svgHeight - (o.y + o.height) * scale - 20})`}
+                            onMouseDown={(e) => { e.stopPropagation(); setActiveOpeningId(o.id); setInteraction('move'); }}
+                            className="cursor-move group/op"
                         >
                             <rect
-                                width={o.width * scale}
-                                height={o.height * scale}
-                                fill={o.type === 'window' ? '#f0f9ff' : '#f8fafc'}
-                                fillOpacity={o.recessId ? "0.6" : "0.9"}
-                                stroke={o.recessId ? "#94a3b8" : "#0ea5e9"}
-                                strokeWidth="2"
-                                rx="2"
-                                strokeDasharray={o.recessId ? "4 2" : "0"}
+                                width={o.width * scale} height={o.height * scale}
+                                fill={o.type === 'window' ? (activeOpeningId === o.id ? '#e0f2fe' : '#f0f9ff') : (activeOpeningId === o.id ? '#f1f5f9' : '#f8fafc')}
+                                stroke={activeOpeningId === o.id ? '#0284c7' : '#0ea5e9'}
+                                strokeWidth={activeOpeningId === o.id ? 3 : 2} rx="2"
                             />
 
-                            {!data.isPrint && (
-                                <>
-                                    <g className="opacity-0 group-hover/opening:opacity-100 transition-opacity pointer-events-none">
-                                        <rect x={0} y={-35} width={70} height={30} fill="#0ea5e9" rx="6" />
-                                        <text x={35} y={-22} className="text-[8px] fill-white font-black" textAnchor="middle">{o.width.toFixed(2)}x{o.height.toFixed(2)} m</text>
-                                        <text x={35} y={-10} className="text-[7px] fill-cyan-100 font-bold" textAnchor="middle">PERÍM: {((o.width + o.height) * 2).toFixed(2)} ml</text>
-                                    </g>
-                                    <circle cx={o.width * scale} cy={0} r={6} fill="white" stroke="#0ea5e9" strokeWidth="2" className="opacity-0 group-hover/opening:opacity-100 cursor-ne-resize" onMouseDown={(e) => { e.stopPropagation(); setActiveOpeningId(o.id); setInteraction('resize'); }} />
-                                    <g className="opacity-0 group-hover/opening:opacity-100 cursor-pointer" transform={`translate(${o.width * scale + 10}, ${o.height * scale})`} onMouseDown={(e) => { e.stopPropagation(); removeOpening(o.id); }}>
-                                        <circle r="8" fill="#ef4444" stroke="white" strokeWidth="1" /><path d="M-3 -3 L3 3 M-3 3 L3 -3" stroke="white" strokeWidth="2" />
-                                    </g>
-                                </>
-                            )}
+                            {/* Opening Dimensions Labels */}
+                            <g transform={`translate(${o.width * scale / 2}, -5)`}>
+                                <rect x="-15" y="-12" width="30" height="10" rx="2" fill="white" opacity="0.9" />
+                                <text textAnchor="middle" fontSize="6" fontWeight="bold" fill="#0369a1">{o.width.toFixed(2)}m</text>
+                            </g>
+                            <g transform={`translate(${o.width * scale + 5}, ${o.height * scale / 2}) rotate(90)`}>
+                                <rect x="-15" y="-12" width="30" height="10" rx="2" fill="white" opacity="0.9" />
+                                <text textAnchor="middle" fontSize="6" fontWeight="bold" fill="#0369a1">{o.height.toFixed(2)}m</text>
+                            </g>
+
+                            {/* Resize handle */}
+                            <circle
+                                cx={o.width * scale} cy={0} r={5} fill="white" stroke="#0ea5e9"
+                                className="cursor-ne-resize opacity-0 group-hover/op:opacity-100"
+                                onMouseDown={(e) => { e.stopPropagation(); setActiveOpeningId(o.id); setInteraction('resize'); }}
+                            />
+                            {/* Remove handle (Trash Icon) */}
+                            <g
+                                transform={`translate(${-10}, ${-10})`}
+                                className="cursor-pointer opacity-0 group-hover/op:opacity-100 transition-opacity"
+                                onClick={(e) => { e.stopPropagation(); removeOpening(o.id); setActiveOpeningId(null); }}
+                            >
+                                <circle r="10" fill="#ef4444" />
+                                <g transform="translate(-6,-6) scale(0.65)">
+                                    <Trash2 size={18} color="white" />
+                                </g>
+                            </g>
                         </g>
                     ))}
-
-                    <g className="pointer-events-none opacity-60">
-                        <line x1="0" y1={viewHeight + 10} x2={wallWidth * scale} y2={viewHeight + 10} stroke="#64748b" strokeWidth="1" />
-                        <text x={wallWidth * scale / 2} y={viewHeight + 22} textAnchor="middle" className="text-[10px] font-mono fill-slate-500">{wallWidth.toFixed(2)}m</text>
-                        <line x1="-12" y1={viewHeight} x2="-12" y2={viewHeight - (isFlipped ? h2 : h1) * scale} stroke="#64748b" strokeWidth="1" />
-                        <text x="-16" y={viewHeight - ((isFlipped ? h2 : h1) * scale) / 2} textAnchor="end" className="text-[9px] font-mono fill-slate-500">{(isFlipped ? h2 : h1).toFixed(2)}m</text>
-                        <line x1={wallWidth * scale + 12} y1={viewHeight} x2={wallWidth * scale + 12} y2={viewHeight - (isFlipped ? h1 : h2) * scale} stroke="#64748b" strokeWidth="1" />
-                        <text x={wallWidth * scale + 16} y={viewHeight - ((isFlipped ? h1 : h2) * scale) / 2} textAnchor="start" className="text-[9px] font-mono fill-slate-500">{(isFlipped ? h1 : h2).toFixed(2)}m</text>
-                    </g>
                 </svg>
             </div>
+            {/* Opening Precision Controls (Sliders) */}
+            {activeOpeningId && isVisible && (
+                <div className="absolute bottom-4 left-4 right-4 z-30 bg-white/95 backdrop-blur p-4 rounded-3xl border border-slate-200 shadow-2xl space-y-3 animate-in fade-in slide-in-from-bottom-2">
+                    <div className="flex justify-between items-center mb-1">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                            <Settings size={12} className="text-cyan-500" />
+                            Ajuste de Abertura
+                        </span>
+                        <button onClick={() => setActiveOpeningId(null)} className="p-1 hover:bg-slate-100 rounded-lg transition-colors text-slate-400 hover:text-slate-600">
+                            <X size={14} />
+                        </button>
+                    </div>
+                    {(() => {
+                        const op = openings.find(o => o.id === activeOpeningId);
+                        if (!op) return null;
+                        const maxW = wallWidth - op.width;
+                        const maxHVal = Math.max(h1, h2) - op.height;
+                        return (
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase tracking-tight mb-1">
+                                        <span>Posición X (Horizontal)</span>
+                                        <span className="text-cyan-600 font-mono">{op.x.toFixed(2)}m</span>
+                                    </div>
+                                    <input
+                                        type="range" min="0" max={maxW} step="0.05" value={op.x}
+                                        onChange={(e) => updateOpening(op.id, { x: parseFloat(e.target.value) })}
+                                        className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[9px] font-bold text-slate-500 uppercase tracking-tight mb-1">
+                                        <span>Posición Y (Vertical)</span>
+                                        <span className="text-cyan-600 font-mono">{op.y.toFixed(2)}m</span>
+                                    </div>
+                                    <input
+                                        type="range" min="0" max={maxHVal} step="0.05" value={op.y}
+                                        onChange={(e) => updateOpening(op.id, { y: parseFloat(e.target.value) })}
+                                        className="w-full h-1.5 bg-slate-100 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                                    />
+                                </div>
+                            </div>
+                        );
+                    })()}
+                </div>
+            )}
         </div>
     );
 };

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Download } from 'lucide-react';
 import { useStore } from '../../store/useStore';
+import { calculateBudget } from '../../utils/budget';
 
 /**
  * Component that exports all project data as JSON
@@ -10,13 +11,13 @@ const ExportDataButton = ({ geo, quantities, canvasImages, project, dimensions, 
 
     const handleExportJSON = async () => {
         try {
-            // Get budget data from store
-            const { prices = {}, selections = {}, budgetItems = [], adjustmentPercentage = 0 } = useStore.getState();
+            // Get data from store
+            const storeState = useStore.getState();
+            const { prices = [], selections = {}, project: storeProject = {} } = storeState;
+            const adjustmentPercentage = storeProject.projectInfo?.adjustmentPercentage || 0;
 
-            // Calculate budget totals
-            const subtotal = budgetItems.reduce((acc, item) => acc + (Number(item.total) || 0), 0);
-            const discountFactor = adjustmentPercentage < 0 ? (1 + adjustmentPercentage / 100) : 1;
-            const finalTotal = Math.round(subtotal * discountFactor);
+            // Calculate budget using centralized logic
+            const { items: budgetItems, total: finalTotal, subtotal } = calculateBudget(quantities, prices, storeProject);
             const adjustmentAmount = finalTotal - subtotal;
 
             // Prepare complete data package

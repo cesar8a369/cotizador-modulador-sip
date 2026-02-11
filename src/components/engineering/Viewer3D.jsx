@@ -1,21 +1,25 @@
 import React, { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, ContactShadows, Environment, PerspectiveCamera } from '@react-three/drei';
+import { OrbitControls, ContactShadows, Environment, PerspectiveCamera, Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { Camera, Check } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 
 const OSB_COLOR = '#e2b17a';
-const INT_WALL_COLOR = '#ffffff';
+const INT_WALL_COLOR = '#f3e5ab'; // Light wood / machimbre color
 const BEAM_COLOR = '#8b5a2b';
 const ROOF_PLATE_COLOR = '#334155';
 
 const getWallHeight = (x, wallLen, config) => {
-    const { type, hBase, hMax } = config;
+    if (!config) return 2.44; // Default height
+    const type = config.type || 'recto';
+    const hBase = Number(config.hBase) || 2.44;
+    const hMax = Number(config.hMax) || 2.44;
+
     if (type === 'recto') return hBase;
-    if (type === 'inclinado') return hBase + (hMax - hBase) * (x / wallLen);
+    if (type === 'inclinado') return hBase + (hMax - hBase) * (x / (wallLen || 1));
     if (type === '2-aguas') {
-        const mid = wallLen / 2;
+        const mid = (wallLen || 1) / 2;
         if (x <= mid) return hBase + (hMax - hBase) * (x / mid);
         return hMax - (hMax - hBase) * ((x - mid) / mid);
     }
@@ -23,30 +27,66 @@ const getWallHeight = (x, wallLen, config) => {
 };
 
 const Opening3D = ({ opening, dimensions, project }) => {
-    const { width, length } = dimensions;
-    const { x, y, width: w, height: h, side, type, recessId, recessWall } = opening;
+    const W = Number(dimensions.width) || 0;
+    const L = Number(dimensions.length) || 0;
+    const x = Number(opening.x) || 0;
+    const y = Number(opening.y) || 0;
+    const w = Number(opening.width) || 0;
+    const h = Number(opening.height) || 0;
+    const { side, type, recessId, recessWall } = opening;
     const recesses = project?.recesses || [];
     let pos = [0, 0, 0], rot = [0, 0, 0];
     const offset = 0.01;
 
-    if (!recessId) {
+    // Find if this opening falls within any recess/irregular shape on this side
+    const centerX = x + w / 2;
+    // Hide opening if facade is hidden
+    if (project?.perimeterVisibility?.[side] === false) return null;
+
+    const r = (recesses || []).find(rc => rc.id === recessId) ||
+        (recesses || []).find(rc => rc.side === side && centerX >= (rc.x - 0.1) && centerX <= (rc.x + rc.width + 0.1));
+
+    // ONLY move to back wall if r exists AND hideBase is true (wall is actually gone)
+    if (!r || (r && !r.hideBase)) {
+        // Position on the standard perimeter wall
         if (side === 'Norte') pos = [x + w / 2, y + h / 2, -offset];
-        else if (side === 'Sur') { pos = [width - x - w / 2, y + h / 2, length + offset]; rot = [0, Math.PI, 0]; }
-        else if (side === 'Este') { pos = [width + offset, y + h / 2, x + w / 2]; rot = [0, -Math.PI / 2, 0]; }
-        else if (side === 'Oeste') { pos = [-offset, y + h / 2, length - x - w / 2]; rot = [0, Math.PI / 2, 0]; }
-    } else {
-        const r = recesses.find(rc => rc.id === recessId);
-        if (!r) return null;
-        if (recessWall === 'back') {
-            if (side === 'Norte') { pos = [r.x + x + w / 2, y + h / 2, r.depth + offset]; rot = [0, 0, 0]; }
-            else if (side === 'Sur') { pos = [width - (r.x + r.width) + x + w / 2, y + h / 2, length - r.depth - offset]; rot = [0, Math.PI, 0]; }
-        } else if (recessWall === 'left') {
-            if (side === 'Norte') { pos = [r.x + offset, y + h / 2, x + w / 2]; rot = [0, -Math.PI / 2, 0]; }
-            else if (side === 'Sur') { pos = [width - (r.x + r.width) - offset, y + h / 2, length - x - w / 2]; rot = [0, Math.PI / 2, 0]; }
-        } else if (recessWall === 'right') {
-            if (side === 'Norte') { pos = [r.x + r.width - offset, y + h / 2, x + w / 2]; rot = [0, Math.PI / 2, 0]; }
-            else if (side === 'Sur') { pos = [width - r.x + offset, y + h / 2, length - x - w / 2]; rot = [0, -Math.PI / 2, 0]; }
-        }
+        else if (side === 'Sur') { pos = [W - (x + w / 2), y + h / 2, L + offset]; rot = [0, Math.PI, 0]; }
+        else if (side === 'Este') { pos = [W + offset, y + h / 2, x + w / 2]; rot = [0, -Math.PI / 2, 0]; }
+        else if (side === 'Oeste') { pos = [-offset, y + h / 2, L - (x + w / 2)]; rot = [0, Math.PI / 2, 0]; }
+
+        return (
+            <mesh position={pos} rotation={rot} castShadow>
+                <boxGeometry args={[w, h, 0.14]} />
+                <meshStandardMaterial color={type === 'window' ? '#bae6fd' : '#1e293b'} transparent opacity={type === 'window' ? 0.6 : 1} />
+            </mesh>
+        );
+    }
+
+    // Automatic mapping to recess if within bounds
+    const targetWall = recessWall || 'back';
+
+    if (targetWall === 'back') {
+        const rd = Number(r.depth);
+        if (side === 'Norte') { pos = [x + w / 2, y + h / 2, rd - offset]; rot = [0, 0, 0]; }
+        else if (side === 'Sur') { pos = [W - (x + w / 2), y + h / 2, L - rd + offset]; rot = [0, Math.PI, 0]; }
+        else if (side === 'Este') { pos = [W - rd + offset, y + h / 2, x + w / 2]; rot = [0, -Math.PI / 2, 0]; }
+        else if (side === 'Oeste') { pos = [rd - offset, y + h / 2, L - (x + w / 2)]; rot = [0, Math.PI / 2, 0]; }
+    } else if (targetWall === 'left') {
+        const rx = Number(r.x);
+        const rd = Number(r.depth);
+        const rw = Number(r.width);
+        if (side === 'Norte') { pos = [rx - offset, y + h / 2, x + w / 2]; rot = [0, -Math.PI / 2, 0]; }
+        else if (side === 'Sur') { pos = [W - (rx + rw) + offset, y + h / 2, L - x - w / 2]; rot = [0, Math.PI / 2, 0]; }
+        else if (side === 'Este') { pos = [W - rd / 2, y + h / 2, rx - offset]; rot = [0, Math.PI, 0]; }
+        else if (side === 'Oeste') { pos = [rd / 2, y + h / 2, L - rx + offset]; rot = [0, 0, 0]; }
+    } else if (targetWall === 'right') {
+        const rx = Number(r.x);
+        const rd = Number(r.depth);
+        const rw = Number(r.width);
+        if (side === 'Norte') { pos = [rx + rw + offset, y + h / 2, x + w / 2]; rot = [0, Math.PI / 2, 0]; }
+        else if (side === 'Sur') { pos = [W - rx - offset, y + h / 2, L - x - w / 2]; rot = [0, -Math.PI / 2, 0]; }
+        else if (side === 'Este') { pos = [W - rd / 2, y + h / 2, rx + rw + offset]; rot = [0, 0, 0]; }
+        else if (side === 'Oeste') { pos = [rd / 2, y + h / 2, L - (rx + rw) - offset]; rot = [0, Math.PI, 0]; }
     }
 
     return (
@@ -66,7 +106,7 @@ const GenericBeam = ({ l, w, h, pos, rot, color = BEAM_COLOR }) => (
 
 const WallSegment = ({ xStart, xEnd, h1, h2, material, position, rotation }) => {
     const w = Math.abs(xEnd - xStart);
-    const thickness = 0.15;
+    const thickness = 0.09;
 
     const shape = new THREE.Shape();
     shape.moveTo(-w / 2, 0);
@@ -88,9 +128,55 @@ const WallSegment = ({ xStart, xEnd, h1, h2, material, position, rotation }) => 
 };
 
 const HouseModel = ({ dimensions, openings, facadeConfigs, interiorWalls, showBeams, showRoofPlates, project, beamOffset = 0 }) => {
-    const { width, length } = dimensions;
+    // CRITICAL SAFETY GUARD
+    if (!facadeConfigs || !dimensions) return null;
+
+    const width = Number(dimensions.width) || 1;
+    const length = Number(dimensions.length) || 1;
     const recesses = project?.recesses || [];
     const mat = new THREE.MeshStandardMaterial({ color: OSB_COLOR, side: THREE.DoubleSide });
+    const intMat = new THREE.MeshStandardMaterial({ color: INT_WALL_COLOR, side: THREE.DoubleSide });
+
+    const minBaseH = Math.min(...Object.values(facadeConfigs).map(c => Number(c.hBase) || 2.44));
+    const fixedIntH = Math.min(2.44, minBaseH);
+
+    const is2AguasNS = facadeConfigs?.Norte?.type === '2-aguas' || facadeConfigs?.Sur?.type === '2-aguas';
+    const is2AguasEW = facadeConfigs?.Este?.type === '2-aguas' || facadeConfigs?.Oeste?.type === '2-aguas';
+    const is2Aguas = is2AguasNS || is2AguasEW;
+
+    // Helper to get interpolated height at any x, z on the house plan using facadeConfigs
+    const getPointHeight = (px, pz) => {
+        // Correct height mapping to match UI (h1=Left, h2=Right)
+        const hN = getWallHeight(px, width, facadeConfigs?.Norte);
+        const hS = getWallHeight(width - px, width, facadeConfigs?.Sur);
+        const hW = getWallHeight(length - pz, length, facadeConfigs?.Oeste);
+        const hE = getWallHeight(pz, length, facadeConfigs?.Este);
+
+        const tz = Math.max(0, Math.min(1, pz / (length || 1)));
+        const tx = Math.max(0, Math.min(1, px / (width || 1)));
+
+        // Interpolation between facades
+        // Check if any facade is hidden to potentially exclude its height contribution
+        const isN = project?.perimeterVisibility?.Norte !== false;
+        const isS = project?.perimeterVisibility?.Sur !== false;
+        const isW = project?.perimeterVisibility?.Oeste !== false;
+        const isE = project?.perimeterVisibility?.Este !== false;
+
+        let profileNS = 0;
+        if (isN && isS) profileNS = hN * (1 - tz) + hS * tz;
+        else if (isN) profileNS = hN;
+        else if (isS) profileNS = hS;
+        else profileNS = Math.max(hN, hS);
+
+        let profileEW = 0;
+        if (isW && isE) profileEW = hW * (1 - tx) + hE * tx;
+        else if (isW) profileEW = hW;
+        else if (isE) profileEW = hE;
+        else profileEW = Math.max(hW, hE);
+
+        // The roof/wall height at this point is the highest dictated by any facade
+        return Math.max(profileNS, profileEW, 2.44);
+    };
 
     const floorShape = useMemo(() => {
         const s = new THREE.Shape(); s.moveTo(0, 0);
@@ -100,16 +186,18 @@ const HouseModel = ({ dimensions, openings, facadeConfigs, interiorWalls, showBe
         const er = recesses.filter(r => r.side === 'Este').sort((a, b) => a.x - b.x);
         er.forEach(r => { s.lineTo(width, r.x); s.lineTo(width - r.depth, r.x); s.lineTo(width - r.depth, r.x + r.width); s.lineTo(width, r.x + r.width); });
         s.lineTo(width, length);
-        const sr = recesses.filter(r => r.side === 'Sur').sort((a, b) => b.x - a.x);
-        sr.forEach(r => { s.lineTo(r.x + r.width, length); s.lineTo(r.x + r.width, length - r.depth); s.lineTo(r.x, length - r.depth); s.lineTo(r.x, length); });
+        const sr = recesses.filter(r => r.side === 'Sur').sort((a, b) => a.x - b.x);
+        sr.forEach(r => { s.lineTo(width - r.x, length); s.lineTo(width - r.x, length - r.depth); s.lineTo(width - (r.x + r.width), length - r.depth); s.lineTo(width - (r.x + r.width), length); });
         s.lineTo(0, length);
-        const or = recesses.filter(r => r.side === 'Oeste').sort((a, b) => b.x - a.x);
-        or.forEach(r => { s.lineTo(0, r.x + r.width); s.lineTo(r.depth, r.x + r.width); s.lineTo(r.depth, r.x); s.lineTo(0, r.x); });
+        const or = recesses.filter(r => r.side === 'Oeste').sort((a, b) => a.x - b.x);
+        or.forEach(r => { s.lineTo(0, length - r.x); s.lineTo(r.depth, length - r.x); s.lineTo(r.depth, length - (r.x + r.width)); s.lineTo(0, length - (r.x + r.width)); });
         s.lineTo(0, 0); return s;
     }, [width, length, recesses]);
 
-    const roofConfig = facadeConfigs.Norte || facadeConfigs.Sur;
-    const { hBase, hMax, type: roofType } = roofConfig;
+    const roofConfig = facadeConfigs?.Norte || facadeConfigs?.Sur || {};
+    const hBase = Number(roofConfig.hBase) || 2.44;
+    const hMax = Number(roofConfig.hMax) || 2.44;
+    const roofType = roofConfig.type || 'recto';
     const angle = Math.atan2(hMax - hBase, roofType === '2-aguas' ? width / 2 : width);
 
     return (
@@ -127,28 +215,78 @@ const HouseModel = ({ dimensions, openings, facadeConfigs, interiorWalls, showBe
                 const rList = recesses.filter(r => r.side === side).sort((a, b) => a.x - b.x);
                 const mid = wallLen / 2;
 
-                // Build segment boundaries
-                const segments = [];
-                let currentX = 0;
+                // Build segment boundaries with hideSideWall support (L-Shape clipping)
+                let segments = [{ xStart: 0, xEnd: wallLen }];
 
-                rList.forEach(r => {
-                    // Add main wall segment before hall
-                    if (r.x > currentX) {
-                        segments.push({ type: 'main', xStart: currentX, xEnd: r.x });
+                // 1. Apply hideSideWall clipping from adjacent recesses (L-Shape Logic)
+                recesses.filter(r => r.hideSideWall).forEach(r => {
+                    const isAtStart = r.x < 0.1;
+                    const isAtEnd = r.x + r.width > (r.side === 'Norte' || r.side === 'Sur' ? width : length) - 0.1;
+
+                    // North Start (Oeste corner) clips Oeste End (near North)
+                    if (r.side === 'Norte' && isAtStart && side === 'Oeste') {
+                        segments = segments.map(s => s.xEnd > length - r.depth ? (s.xStart >= length - r.depth ? null : { ...s, xEnd: length - r.depth }) : s).filter(Boolean);
                     }
-                    // Add hall segments
-                    segments.push({ type: 'hall', recess: r, xStart: r.x, xEnd: r.x + r.width });
-                    currentX = r.x + r.width;
+                    // North End (Este corner) clips Este Start (near North)
+                    if (r.side === 'Norte' && isAtEnd && side === 'Este') {
+                        segments = segments.map(s => s.xStart < r.depth ? (s.xEnd <= r.depth ? null : { ...s, xStart: r.depth }) : s).filter(Boolean);
+                    }
+                    // South Start (Este corner) clips Este End (near South)
+                    if (r.side === 'Sur' && isAtStart && side === 'Este') {
+                        segments = segments.map(s => s.xEnd > length - r.depth ? (s.xStart >= length - r.depth ? null : { ...s, xEnd: length - r.depth }) : s).filter(Boolean);
+                    }
+                    // South End (Oeste corner) clips Oeste Start (near South)
+                    if (r.side === 'Sur' && isAtEnd && side === 'Oeste') {
+                        segments = segments.map(s => s.xStart < r.depth ? (s.xEnd <= r.depth ? null : { ...s, xStart: r.depth }) : s).filter(Boolean);
+                    }
+                    // West Start (Sur corner) clips South End (near West)
+                    if (r.side === 'Oeste' && isAtStart && side === 'Sur') {
+                        segments = segments.map(s => s.xEnd > width - r.depth ? (s.xStart >= width - r.depth ? null : { ...s, xEnd: width - r.depth }) : s).filter(Boolean);
+                    }
+                    // West End (North corner) clips North Start (near West)
+                    if (r.side === 'Oeste' && isAtEnd && side === 'Norte') {
+                        segments = segments.map(s => s.xStart < r.depth ? (s.xEnd <= r.depth ? null : { ...s, xStart: r.depth }) : s).filter(Boolean);
+                    }
+                    // East Start (North corner) clips North End (near East)
+                    if (r.side === 'Este' && isAtStart && side === 'Norte') {
+                        segments = segments.map(s => s.xEnd > width - r.depth ? (s.xStart >= width - r.depth ? null : { ...s, xEnd: width - r.depth }) : s).filter(Boolean);
+                    }
+                    // East End (South corner) clips South Start (near East)
+                    if (r.side === 'Este' && isAtEnd && side === 'Sur') {
+                        segments = segments.map(s => s.xStart < r.depth ? (s.xEnd <= r.depth ? null : { ...s, xStart: r.depth }) : s).filter(Boolean);
+                    }
                 });
 
-                // Final main wall segment
-                if (currentX < wallLen) {
-                    segments.push({ type: 'main', xStart: currentX, xEnd: wallLen });
-                }
+                // 2. Identify segments affected by the actual recesses on this side
+                let finalSegments = [];
+                segments.forEach(seg => {
+                    let currentX = seg.xStart;
+                    const rOnSide = rList.filter(ridx => ridx.x < seg.xEnd && ridx.x + ridx.width > seg.xStart);
+
+                    rOnSide.forEach(r => {
+                        const rStart = Math.max(seg.xStart, r.x);
+                        const rEnd = Math.min(seg.xEnd, r.x + r.width);
+
+                        if (rStart > currentX) {
+                            finalSegments.push({ type: 'main', xStart: currentX, xEnd: rStart });
+                        }
+
+                        // If hideBase is false, the main wall remains
+                        if (!r.hideBase) {
+                            finalSegments.push({ type: 'main', xStart: rStart, xEnd: rEnd });
+                        }
+
+                        finalSegments.push({ type: 'hall', recess: r, xStart: rStart, xEnd: rEnd });
+                        currentX = rEnd;
+                    });
+                    if (currentX < seg.xEnd) {
+                        finalSegments.push({ type: 'main', xStart: currentX, xEnd: seg.xEnd });
+                    }
+                });
 
                 return (
-                    <group key={side}>
-                        {segments.map((seg, i) => {
+                    <group key={side} visible={project?.perimeterVisibility?.[side] !== false}>
+                        {finalSegments.map((seg, i) => {
                             if (seg.type === 'main') {
                                 // Split at peak for 2-aguas roofs
                                 let subSegs = [seg];
@@ -160,40 +298,120 @@ const HouseModel = ({ dimensions, openings, facadeConfigs, interiorWalls, showBe
                                 }
 
                                 return subSegs.map((s, j) => {
-                                    const h1 = getWallHeight(s.xStart, wallLen, conf);
-                                    const h2 = getWallHeight(s.xEnd, wallLen, conf);
-                                    const sLen = s.xEnd - s.xStart;
-                                    const offset = 0.075; // Half of wall thickness
-                                    let p = [0, 0, 0], rot = [0, 0, 0];
+                                    let h1_top, h2_top;
+                                    if (side === 'Norte') {
+                                        h1_top = getPointHeight(s.xStart, 0);
+                                        h2_top = getPointHeight(s.xEnd, 0);
+                                    } else if (side === 'Sur') {
+                                        h1_top = getPointHeight(width - s.xStart, length);
+                                        h2_top = getPointHeight(width - s.xEnd, length);
+                                    } else if (side === 'Oeste') {
+                                        h1_top = getPointHeight(0, length - s.xStart);
+                                        h2_top = getPointHeight(0, length - s.xEnd);
+                                    } else { // Este
+                                        h1_top = getPointHeight(width, s.xStart);
+                                        h2_top = getPointHeight(width, s.xEnd);
+                                    }
 
-                                    if (side === 'Norte') { p = [s.xStart + sLen / 2, 0, -offset]; rot = [0, 0, 0]; }
-                                    else if (side === 'Sur') { p = [width - s.xStart - sLen / 2, 0, length + offset]; rot = [0, Math.PI, 0]; }
-                                    else if (side === 'Oeste') { p = [-offset, 0, length - s.xStart - sLen / 2]; rot = [0, Math.PI / 2, 0]; }
-                                    else if (side === 'Este') { p = [width + offset, 0, s.xStart + sLen / 2]; rot = [0, -Math.PI / 2, 0]; }
+                                    const hWallBaseConfig = Number(conf.hBase) || 2.44;
+                                    const effectiveHBase = Math.min(h1_top, h2_top, hWallBaseConfig);
 
-                                    return <WallSegment key={`main-${i}-${j}`} xStart={0} xEnd={sLen} h1={h1} h2={h2} material={mat} position={p} rotation={rot} />;
+                                    const sLen = Math.abs(s.xEnd - s.xStart);
+                                    let p = [0, 0, 0];
+                                    let rot = [0, 0, 0];
+
+                                    if (side === 'Norte') { p = [s.xStart + sLen / 2, 0, 0]; rot = [0, 0, 0]; }
+                                    else if (side === 'Sur') { p = [width - (s.xStart + sLen / 2), 0, length]; rot = [0, Math.PI, 0]; }
+                                    else if (side === 'Oeste') { p = [0, 0, length - (s.xStart + sLen / 2)]; rot = [0, Math.PI / 2, 0]; }
+                                    else if (side === 'Este') { p = [width, 0, s.xStart + sLen / 2]; rot = [0, -Math.PI / 2, 0]; }
+
+                                    return (
+                                        <group key={`group-main-${i}-${j}`}>
+                                            {/* Rectangular SIP Wall (Base) */}
+                                            <WallSegment xStart={0} xEnd={sLen} h1={effectiveHBase} h2={effectiveHBase} material={mat} position={p} rotation={rot} />
+                                            {/* Gable End / Cutout - follows the roof profile exactly */}
+                                            {(h1_top > effectiveHBase || h2_top > effectiveHBase) && (
+                                                <WallSegment xStart={0} xEnd={sLen} h1={h1_top - effectiveHBase} h2={h2_top - effectiveHBase}
+                                                    material={mat} position={[p[0], effectiveHBase, p[2]]} rotation={rot} />
+                                            )}
+                                        </group>
+                                    );
                                 });
                             } else if (seg.type === 'hall') {
                                 const r = seg.recess;
-                                const hB = getWallHeight(r.x + r.width / 2, wallLen, conf);
-                                const offset = 0.075; // Half of wall thickness
                                 let pB = [0, 0, 0], rB = [0, 0, 0], pL = [0, 0, 0], rL = [0, 0, 0], pR = [0, 0, 0], rR = [0, 0, 0];
-
                                 if (side === 'Norte') {
-                                    pB = [r.x + r.width / 2, 0, r.depth - offset]; rB = [0, 0, 0];
-                                    pL = [r.x - offset, 0, r.depth / 2]; rL = [0, Math.PI / 2, 0];
-                                    pR = [r.x + r.width + offset, 0, r.depth / 2]; rR = [0, -Math.PI / 2, 0];
+                                    pB = [r.x + r.width / 2, 0, r.depth]; rB = [0, 0, 0];
+                                    pL = [r.x, 0, r.depth / 2]; rL = [0, Math.PI / 2, 0];
+                                    pR = [r.x + r.width, 0, r.depth / 2]; rR = [0, -Math.PI / 2, 0];
                                 } else if (side === 'Sur') {
-                                    pB = [width - (r.x + r.width / 2), 0, length - r.depth + offset]; rB = [0, Math.PI, 0];
-                                    pL = [width - (r.x + r.width) + offset, 0, length - r.depth / 2]; rL = [0, -Math.PI / 2, 0];
-                                    pR = [width - r.x - offset, 0, length - r.depth / 2]; rR = [0, Math.PI / 2, 0];
+                                    pB = [width - (r.x + r.width / 2), 0, length - r.depth]; rB = [0, Math.PI, 0];
+                                    pL = [width - (r.x + r.width), 0, length - r.depth / 2]; rL = [0, -Math.PI / 2, 0];
+                                    pR = [width - r.x, 0, length - r.depth / 2]; rR = [0, Math.PI / 2, 0];
+                                } else if (side === 'Oeste') {
+                                    pB = [r.depth, 0, length - (r.x + r.width / 2)]; rB = [0, Math.PI / 2, 0];
+                                    pR = [r.depth / 2, 0, length - r.x]; rR = [0, 0, 0];
+                                    pL = [r.depth / 2, 0, length - (r.x + r.width)]; rL = [0, Math.PI, 0];
+                                } else if (side === 'Este') {
+                                    pB = [width - r.depth, 0, r.x + r.width / 2]; rB = [0, -Math.PI / 2, 0];
+                                    pR = [width - r.depth / 2, 0, r.x]; rR = [0, Math.PI, 0];
+                                    pL = [width - r.depth / 2, 0, r.x + r.width]; rL = [0, 0, 0];
                                 }
+
+                                const isAtStart = r.x < 0.1;
+                                const isAtEnd = r.x + r.width > wallLen - 0.1;
+
+                                let hideL = false;
+                                let hideR = false;
+
+                                const hHall = Number(dimensions.height) || 2.44;
+
+                                if (r.hideSideWall) {
+                                    if (side === 'Norte') { if (isAtStart) hideL = true; if (isAtEnd) hideR = true; }
+                                    else if (side === 'Sur') { if (isAtStart) hideR = true; if (isAtEnd) hideL = true; }
+                                    else if (side === 'Este') { if (isAtStart) hideL = true; if (isAtEnd) hideR = true; }
+                                    else if (side === 'Oeste') { if (isAtStart) hideL = true; if (isAtEnd) hideR = true; }
+                                }
+
+                                // Calculate heights for hall walls using global point projector
+                                let hB1_top, hB2_top, hL1_top, hL2_top, hR1_top, hR2_top;
+                                if (side === 'Norte') {
+                                    hB1_top = getPointHeight(r.x, r.depth); hB2_top = getPointHeight(r.x + r.width, r.depth);
+                                    hL1_top = getPointHeight(r.x, 0); hL2_top = getPointHeight(r.x, r.depth);
+                                    hR1_top = getPointHeight(r.x + r.width, 0); hR2_top = getPointHeight(r.x + r.width, r.depth);
+                                } else if (side === 'Sur') {
+                                    hB1_top = getPointHeight(width - r.x, length - r.depth); hB2_top = getPointHeight(width - (r.x + r.width), length - r.depth);
+                                    hL1_top = getPointHeight(width - (r.x + r.width), length); hL2_top = getPointHeight(width - (r.x + r.width), length - r.depth);
+                                    hR1_top = getPointHeight(width - r.x, length); hR2_top = getPointHeight(width - r.x, length - r.depth);
+                                } else if (side === 'Oeste') {
+                                    hB1_top = getPointHeight(r.depth, length - r.x); hB2_top = getPointHeight(r.depth, length - (r.x + r.width));
+                                    hL1_top = getPointHeight(0, length - (r.x + r.width)); hL2_top = getPointHeight(r.depth, length - (r.x + r.width));
+                                    hR1_top = getPointHeight(0, length - r.x); hR2_top = getPointHeight(r.depth, length - r.x);
+                                } else { // Este
+                                    hB1_top = getPointHeight(width - r.depth, r.x); hB2_top = getPointHeight(width - r.depth, r.x + r.width);
+                                    hL1_top = getPointHeight(width, r.x + r.width); hL2_top = getPointHeight(width - r.depth, r.x + r.width);
+                                    hR1_top = getPointHeight(width, r.x); hR2_top = getPointHeight(width - r.depth, r.x);
+                                }
+
+                                const hWallBaseConfig = Number(facadeConfigs[side]?.hBase) || 2.44;
+
+                                const renderSlopedWall = (xStart, xEnd, h1, h2, pos, rot) => {
+                                    const effBase = Math.min(h1, h2, hWallBaseConfig);
+                                    return (
+                                        <group>
+                                            <WallSegment xStart={xStart} xEnd={xEnd} h1={effBase} h2={effBase} material={mat} position={pos} rotation={rot} />
+                                            {(h1 > effBase || h2 > effBase) && (
+                                                <WallSegment xStart={xStart} xEnd={xEnd} h1={h1 - effBase} h2={h2 - effBase} material={mat} position={[pos[0], effBase, pos[2]]} rotation={rot} />
+                                            )}
+                                        </group>
+                                    );
+                                };
 
                                 return (
                                     <group key={`hall-${i}`}>
-                                        <WallSegment xStart={0} xEnd={r.width} h1={r.height || hB} h2={r.height || hB} material={mat} position={pB} rotation={rB} />
-                                        <WallSegment xStart={0} xEnd={r.depth} h1={r.height || hB} h2={r.height || hB} material={mat} position={pL} rotation={rL} />
-                                        <WallSegment xStart={0} xEnd={r.depth} h1={r.height || hB} h2={r.height || hB} material={mat} position={pR} rotation={rR} />
+                                        {r.hideBase && renderSlopedWall(0, r.width, hB1_top, hB2_top, pB, rB)}
+                                        {!hideL && renderSlopedWall(0, r.depth, hL1_top, hL2_top, pL, rL)}
+                                        {!hideR && renderSlopedWall(0, r.depth, hR1_top, hR2_top, pR, rR)}
                                     </group>
                                 );
                             }
@@ -203,11 +421,74 @@ const HouseModel = ({ dimensions, openings, facadeConfigs, interiorWalls, showBe
                 );
             })}
 
-            {interiorWalls.map(w => (
-                <mesh key={w.id} position={[w.x, 1.22, w.y]} rotation={[0, w.isVertical ? 0 : Math.PI / 2, 0]} castShadow receiveShadow>
-                    <boxGeometry args={[0.08, 2.44, w.length]} /><meshStandardMaterial color={INT_WALL_COLOR} />
-                </mesh>
-            ))}
+            {interiorWalls && interiorWalls.map(w => {
+                const W = Number(width);
+                const L = Number(length);
+                const thick = 0.09;
+
+                // Robust coordinate extraction matching FloorPlan logic
+                const startX = w.x !== undefined ? w.x : (w.x1 !== undefined ? w.x1 : 0);
+                const startZ = w.y !== undefined ? w.y : (w.y1 !== undefined ? w.y1 : 0);
+
+                const innerXMin = 0.09;
+                const innerXMax = W - 0.09;
+                const innerZMin = 0.09;
+                const innerZMax = L - 0.09;
+
+                let sX = startX;
+                let sZ = startZ;
+                let eX, eZ;
+                if (w.length !== undefined) {
+                    const wallLenAttr = Number(w.length);
+                    eX = w.isVertical ? startX : startX + wallLenAttr;
+                    eZ = w.isVertical ? startZ + wallLenAttr : startZ;
+                } else {
+                    eX = w.x2 !== undefined ? w.x2 : startX;
+                    eZ = w.y2 !== undefined ? w.y2 : startZ;
+                }
+
+                if (sX < innerXMin) sX = innerXMin;
+                if (sX > innerXMax) sX = innerXMax;
+                if (eX < innerXMin) eX = innerXMin;
+                if (eX > innerXMax) eX = innerXMax;
+                if (sZ < innerZMin) sZ = innerZMin;
+                if (sZ > innerZMax) sZ = innerZMax;
+                if (eZ < innerZMin) eZ = innerZMin;
+                if (eZ > innerZMax) eZ = innerZMax;
+
+                const lWall = Math.sqrt(Math.pow(eX - sX, 2) + Math.pow(eZ - sZ, 2));
+                if (!lWall || isNaN(lWall) || lWall < 0.01) return null;
+
+                // INTERIOR WALLS SYNC: Match roof profile exactly
+                const hStart = getPointHeight(sX, sZ);
+                const hEnd = getPointHeight(eX, eZ);
+
+                // Keep them within a reasonable minimum if ridge is very low
+                const h1 = Math.max(2.44, hStart);
+                const h2 = Math.max(2.44, hEnd);
+
+                let posI = [0, 0, 0], rotI = [0, 0, 0];
+                const isVert = w.isVertical || Math.abs(eX - sX) < 0.01;
+
+                if (isVert) {
+                    posI = [sX, 0, sZ + lWall / 2];
+                    rotI = [0, Math.PI / 2, 0];
+                } else {
+                    posI = [sX + lWall / 2, 0, sZ];
+                    rotI = [0, 0, 0];
+                }
+
+                // Render interior wall with same slope support as exterior walls
+                const effBase = 2.44; // Default interior wall panel height
+                return (
+                    <group key={w.id}>
+                        <WallSegment xStart={0} xEnd={lWall} h1={Math.min(h1, effBase)} h2={Math.min(h2, effBase)} material={intMat} position={posI} rotation={rotI} />
+                        {(h1 > effBase || h2 > effBase) && (
+                            <WallSegment xStart={0} xEnd={lWall} h1={Math.max(0, h1 - effBase)} h2={Math.max(0, h2 - effBase)} material={intMat} position={[posI[0], effBase, posI[2]]} rotation={rotI} />
+                        )}
+                    </group>
+                );
+            })}
 
             {/* OVERHAULED ROOF AND BEAMS SYSTEM */}
             {(() => {
@@ -215,148 +496,173 @@ const HouseModel = ({ dimensions, openings, facadeConfigs, interiorWalls, showBe
                 const W = Number(width);
                 const L = Number(length);
                 const offset = Number(beamOffset);
-
-                // Helper to get interpolated height at any x, z on the house plan
-                const getPointHeight = (px, pz) => {
-                    const hN = Number(getWallHeight(px, W, facadeConfigs.Norte));
-                    const hS = Number(getWallHeight(px, W, facadeConfigs.Sur));
-                    // Linear interpolation between North (z=0) and South (z=L)
-                    const t = Math.max(0, Math.min(1, pz / L));
-                    return hN * (1 - t) + hS * t;
-                };
-
                 const roofMeshes = [];
                 const structuralBeams = [];
 
-                // Determine structure type from primary facade configs
-                const is2Aguas = facadeConfigs.Norte.type === '2-aguas' || facadeConfigs.Sur.type === '2-aguas';
+                const hasSlopeNS = is2AguasNS || (facadeConfigs?.Norte?.type === 'inclinado' || facadeConfigs?.Sur?.type === 'inclinado');
+                const hasSlopeEW = is2AguasEW || (facadeConfigs?.Este?.type === 'inclinado' || facadeConfigs?.Oeste?.type === 'inclinado');
+
+                // If East/West has the slope control, beams should run North-South and iterate along Width
+                const axisEW = hasSlopeEW && !hasSlopeNS;
 
                 const BEAM_H = 0.16;
                 const BEAM_W = 0.08;
 
-                if (showRoofPlates) {
-                    // Create roof geometry that perfectly connects the points
-                    if (is2Aguas) {
-                        const mid = W / 2;
-
-                        // Left Section
-                        const leftGeom = new THREE.BufferGeometry();
-                        const leftVerts = new Float32Array([
-                            0, getPointHeight(0, 0), 0,
-                            mid, getPointHeight(mid, 0), 0,
-                            mid, getPointHeight(mid, L), L,
-
-                            0, getPointHeight(0, 0), 0,
-                            mid, getPointHeight(mid, L), L,
-                            0, getPointHeight(0, L), L
-                        ]);
-                        leftGeom.setAttribute('position', new THREE.BufferAttribute(leftVerts, 3));
-                        leftGeom.computeVertexNormals();
-                        // Position roof plate ON TOP of the beams (BEAM_H)
-                        roofMeshes.push(
-                            <mesh key="roof-l" geometry={leftGeom} position={[0, BEAM_H + offset, 0]} castShadow receiveShadow>
-                                <meshStandardMaterial color={ROOF_PLATE_COLOR} side={THREE.DoubleSide} />
-                            </mesh>
-                        );
-
-                        // Right Section
-                        const rightGeom = new THREE.BufferGeometry();
-                        const rightVerts = new Float32Array([
-                            mid, getPointHeight(mid, 0), 0,
-                            W, getPointHeight(W, 0), 0,
-                            W, getPointHeight(W, L), L,
-
-                            mid, getPointHeight(mid, 0), 0,
-                            W, getPointHeight(W, L), L,
-                            mid, getPointHeight(mid, L), L
-                        ]);
-                        rightGeom.setAttribute('position', new THREE.BufferAttribute(rightVerts, 3));
-                        rightGeom.computeVertexNormals();
-                        roofMeshes.push(
-                            <mesh key="roof-r" geometry={rightGeom} position={[0, BEAM_H + offset, 0]} castShadow receiveShadow>
-                                <meshStandardMaterial color={ROOF_PLATE_COLOR} side={THREE.DoubleSide} />
-                            </mesh>
-                        );
-                    } else {
-                        // Single slope Section
-                        const slopedGeom = new THREE.BufferGeometry();
-                        const verts = new Float32Array([
-                            0, getPointHeight(0, 0), 0,
-                            W, getPointHeight(W, 0), 0,
-                            W, getPointHeight(W, L), L,
-
-                            0, getPointHeight(0, 0), 0,
-                            W, getPointHeight(W, L), L,
-                            0, getPointHeight(0, L), L
-                        ]);
-                        slopedGeom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
-                        slopedGeom.computeVertexNormals();
-                        roofMeshes.push(
-                            <mesh key="roof-sloped" geometry={slopedGeom} position={[0, BEAM_H + offset, 0]} castShadow receiveShadow>
-                                <meshStandardMaterial color={ROOF_PLATE_COLOR} side={THREE.DoubleSide} />
-                            </mesh>
-                        );
+                const isInside = (ax, az) => {
+                    if (ax < -0.01 || ax > W + 0.01 || az < -0.01 || az > L + 0.01) return false;
+                    for (const r of recesses) {
+                        if (!r.hideBase) continue;
+                        let insideR = false;
+                        const rw = r.width;
+                        const rd = r.depth;
+                        if (r.side === 'Norte') insideR = (ax >= r.x - 0.1 && ax <= r.x + rw + 0.1 && az >= -0.1 && az <= rd + 0.1);
+                        else if (r.side === 'Sur') insideR = (ax >= W - (r.x + rw) - 0.1 && ax <= W - r.x + 0.1 && az >= L - rd - 0.1 && az <= L + 0.1);
+                        else if (r.side === 'Este') insideR = (ax >= W - rd - 0.1 && ax <= W + 0.1 && az >= r.x - 0.1 && az <= r.x + rw + 0.1);
+                        else if (r.side === 'Oeste') insideR = (ax >= -0.1 && ax <= rd + 0.1 && az >= L - (r.x + rw) - 0.1 && az <= L - r.x + 0.1);
+                        if (insideR) return false;
                     }
+                    return true;
+                };
+
+                if (showRoofPlates) {
+                    // ROBUST GRID-BASED ROOF that follows any irregular shape
+                    const resolution = 0.1; // Increased precision (10cm)
+                    const rows = Math.ceil(L / resolution);
+                    const cols = Math.ceil(W / resolution);
+
+                    const vertices = [];
+                    const indices = [];
+
+                    for (let j = 0; j <= rows; j++) {
+                        for (let i = 0; i <= cols; i++) {
+                            const gx = Math.min(W, i * resolution);
+                            const gz = Math.min(L, j * resolution);
+                            vertices.push(gx, getPointHeight(gx, gz), gz);
+                        }
+                    }
+
+                    for (let j = 0; j < rows; j++) {
+                        for (let i = 0; i < cols; i++) {
+                            const gx = i * resolution + resolution / 2;
+                            const gz = j * resolution + resolution / 2;
+                            if (isInside(gx, gz)) {
+                                const a = j * (cols + 1) + i;
+                                const b = j * (cols + 1) + (i + 1);
+                                const c = (j + 1) * (cols + 1) + i;
+                                const d = (j + 1) * (cols + 1) + (i + 1);
+                                indices.push(a, c, b);
+                                indices.push(b, c, d);
+                            }
+                        }
+                    }
+
+                    const roofGeom = new THREE.BufferGeometry();
+                    roofGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array(vertices), 3));
+                    roofGeom.setIndex(indices);
+                    roofGeom.computeVertexNormals();
+
+                    roofMeshes.push(
+                        <mesh key="roof-clipped" geometry={roofGeom} position={[0, offset + BEAM_H, 0]} castShadow receiveShadow>
+                            <meshStandardMaterial color={ROOF_PLATE_COLOR} side={THREE.DoubleSide} roughness={0.7} />
+                        </mesh>
+                    );
                 }
 
                 if (showBeams) {
                     const step = 1.22;
-                    const count = Math.ceil(L / step) + 1;
 
-                    for (let i = 0; i < count; i++) {
-                        const z = Math.min(i * step, L);
+                    if (axisEW) {
+                        // Beams run along Z (North-South), distributed along X (Width)
+                        const countX = Math.ceil(W / step) + 1;
+                        for (let i = 0; i < countX; i++) {
+                            const x = Math.min(i * step, W);
+                            if (isInside(x, L / 2)) {
+                                if (is2Aguas) {
+                                    const midL = L / 2;
+                                    const hStart = getPointHeight(x, 0);
+                                    const hMid = getPointHeight(x, midL);
+                                    const hEnd = getPointHeight(x, L);
 
-                        if (is2Aguas) {
-                            const mid = W / 2;
-                            const hStart = getPointHeight(0, z);
-                            const hMid = getPointHeight(mid, z);
-                            const hEnd = getPointHeight(W, z);
+                                    const lenL = Math.sqrt(Math.pow(midL, 2) + Math.pow(hMid - hStart, 2));
+                                    const angL = Math.atan2(hMid - hStart, midL);
+                                    structuralBeams.push(
+                                        <GenericBeam key={`beam-x-l-${i}`} l={lenL} w={BEAM_W} h={BEAM_H}
+                                            pos={[x, (hStart + hMid) / 2 + offset + BEAM_H / 2, midL / 2]}
+                                            rot={[angL, Math.PI / 2, 0]} />
+                                    );
+                                    const lenR = Math.sqrt(Math.pow(midL, 2) + Math.pow(hMid - hEnd, 2));
+                                    const angR = Math.atan2(hMid - hEnd, midL);
+                                    structuralBeams.push(
+                                        <GenericBeam key={`beam-x-r-${i}`} l={lenR} w={BEAM_W} h={BEAM_H}
+                                            pos={[x, (hEnd + hMid) / 2 + offset + BEAM_H / 2, midL + midL / 2]}
+                                            rot={[-angR, Math.PI / 2, 0]} />
+                                    );
+                                } else {
+                                    const h0 = getPointHeight(x, 0);
+                                    const hL = getPointHeight(x, L);
+                                    const len = Math.sqrt(Math.pow(L, 2) + Math.pow(hL - h0, 2));
+                                    const ang = Math.atan2(hL - h0, L);
+                                    structuralBeams.push(
+                                        <GenericBeam key={`beam-x-s-${i}`} l={len} w={BEAM_W} h={BEAM_H}
+                                            pos={[x, (h0 + hL) / 2 + offset + BEAM_H / 2, L / 2]}
+                                            rot={[ang, Math.PI / 2, 0]} />
+                                    );
+                                }
+                            }
+                        }
+                    } else {
+                        // Default: Beams run along X (East-West), distributed along Z (Length)
+                        const countZ = Math.ceil(L / step) + 1;
+                        for (let i = 0; i < countZ; i++) {
+                            const z = Math.min(i * step, L);
+                            if (isInside(W / 2, z)) {
+                                if (is2Aguas) {
+                                    const midW = W / 2;
+                                    const hStart = getPointHeight(0, z);
+                                    const hMid = getPointHeight(midW, z);
+                                    const hEnd = getPointHeight(W, z);
 
-                            // Left rafter: center at average height + half beam height to rest on wall
-                            const lenL = Math.sqrt(Math.pow(mid, 2) + Math.pow(hMid - hStart, 2));
-                            const angL = Math.atan2(hMid - hStart, mid);
-                            structuralBeams.push(
-                                <GenericBeam key={`beam-l-${i}`} l={lenL} w={BEAM_W} h={BEAM_H}
-                                    pos={[mid / 2, (hStart + hMid) / 2 + offset + BEAM_H / 2, z]}
-                                    rot={[0, 0, angL]} />
-                            );
-
-                            // Right rafter
-                            const lenR = Math.sqrt(Math.pow(mid, 2) + Math.pow(hMid - hEnd, 2));
-                            const angR = Math.atan2(hMid - hEnd, mid);
-                            structuralBeams.push(
-                                <GenericBeam key={`beam-r-${i}`} l={lenR} w={BEAM_W} h={BEAM_H}
-                                    pos={[mid + mid / 2, (hEnd + hMid) / 2 + offset + BEAM_H / 2, z]}
-                                    rot={[0, 0, -angR]} />
-                            );
-                        } else {
-                            // Unified sloped rafter
-                            const h0 = getPointHeight(0, z);
-                            const hW = getPointHeight(W, z);
-                            const len = Math.sqrt(Math.pow(W, 2) + Math.pow(hW - h0, 2));
-                            const ang = Math.atan2(hW - h0, W);
-                            // Position center at (average wall height) + (half beam height) to SIT ON TOP
-                            structuralBeams.push(
-                                <GenericBeam key={`beam-s-${i}`} l={len} w={BEAM_W} h={BEAM_H}
-                                    pos={[W / 2, (h0 + hW) / 2 + offset + BEAM_H / 2, z]}
-                                    rot={[0, 0, ang]} />
-                            );
+                                    const lenL = Math.sqrt(Math.pow(midW, 2) + Math.pow(hMid - hStart, 2));
+                                    const angL = Math.atan2(hMid - hStart, midW);
+                                    structuralBeams.push(
+                                        <GenericBeam key={`beam-z-l-${i}`} l={lenL} w={BEAM_W} h={BEAM_H}
+                                            pos={[midW / 2, (hStart + hMid) / 2 + offset + BEAM_H / 2, z]}
+                                            rot={[0, 0, angL]} />
+                                    );
+                                    const lenR = Math.sqrt(Math.pow(midW, 2) + Math.pow(hMid - hEnd, 2));
+                                    const angR = Math.atan2(hMid - hEnd, midW);
+                                    structuralBeams.push(
+                                        <GenericBeam key={`beam-z-r-${i}`} l={lenR} w={BEAM_W} h={BEAM_H}
+                                            pos={[midW + midW / 2, (hEnd + hMid) / 2 + offset + BEAM_H / 2, z]}
+                                            rot={[0, 0, -angR]} />
+                                    );
+                                } else {
+                                    const h0 = getPointHeight(0, z);
+                                    const hW = getPointHeight(W, z);
+                                    const len = Math.sqrt(Math.pow(W, 2) + Math.pow(hW - h0, 2));
+                                    const ang = Math.atan2(hW - h0, W);
+                                    structuralBeams.push(
+                                        <GenericBeam key={`beam-z-s-${i}`} l={len} w={BEAM_W} h={BEAM_H}
+                                            pos={[W / 2, (h0 + hW) / 2 + offset + BEAM_H / 2, z]}
+                                            rot={[0, 0, ang]} />
+                                    );
+                                }
+                            }
                         }
                     }
 
-                    // Ridge beam if 2-aguas
-                    if (is2Aguas) {
+                    // Ridge Beams
+                    if (is2AguasNS) {
                         const mid = W / 2;
-                        const hRidgeStart = getPointHeight(mid, 0);
-                        const hRidgeEnd = getPointHeight(mid, L);
-                        const ridgeLen = Math.sqrt(Math.pow(L, 2) + Math.pow(hRidgeEnd - hRidgeStart, 2));
-                        const ridgeAng = Math.atan2(hRidgeEnd - hRidgeStart, L);
-                        // Center is 10cm higher than wall mid to sit correctly
-                        structuralBeams.push(
-                            <GenericBeam key="ridge-beam" l={ridgeLen} w={0.2} h={0.2}
-                                pos={[mid, (hRidgeStart + hRidgeEnd) / 2 + offset + 0.1, L / 2]}
-                                rot={[ridgeAng, Math.PI / 2, 0]} />
-                        );
+                        const hS = getPointHeight(mid, 0), hE = getPointHeight(mid, L);
+                        const len = Math.sqrt(Math.pow(L, 2) + Math.pow(hE - hS, 2)), ang = Math.atan2(hE - hS, L);
+                        structuralBeams.push(<GenericBeam key="ridge-ns" l={len} w={0.2} h={0.2} pos={[mid, (hS + hE) / 2 + offset + 0.1, L / 2]} rot={[ang, Math.PI / 2, 0]} />);
+                    }
+                    if (is2AguasEW) {
+                        const mid = L / 2;
+                        const hW = getPointHeight(0, mid), hE = getPointHeight(W, mid);
+                        const len = Math.sqrt(Math.pow(W, 2) + Math.pow(hE - hW, 2)), ang = Math.atan2(hE - hW, W);
+                        structuralBeams.push(<GenericBeam key="ridge-ew" l={len} w={0.2} h={0.2} pos={[W / 2, (hW + hE) / 2 + offset + 0.1, mid]} rot={[0, 0, ang]} />);
                     }
                 }
 
@@ -370,12 +676,77 @@ const HouseModel = ({ dimensions, openings, facadeConfigs, interiorWalls, showBe
 
 
             {openings.map(op => <Opening3D key={op.id} opening={op} dimensions={dimensions} project={project} />)}
+
+            {/* SYNC LABELS: Show measurements in 3D to match facade configs */}
+            <group>
+                {/* Height Labels at Corners */}
+                {[
+                    { p: [0, getPointHeight(0, 0), 0], label: `H:${getPointHeight(0, 0).toFixed(2)}m` },
+                    { p: [width, getPointHeight(width, 0), 0], label: `H:${getPointHeight(width, 0).toFixed(2)}m` },
+                    { p: [0, getPointHeight(0, length), length], label: `H:${getPointHeight(0, length).toFixed(2)}m` },
+                    { p: [width, getPointHeight(width, length), length], label: `H:${getPointHeight(width, length).toFixed(2)}m` }
+                ].map((item, i) => (
+                    <Text
+                        key={`label-h-${i}`}
+                        position={[item.p[0], item.p[1] + 0.3, item.p[2]]}
+                        fontSize={0.25}
+                        color="#1e293b"
+                        anchorX="center"
+                        anchorY="middle"
+                        backgroundColor="white"
+                        padding={0.05}
+                    >
+                        {item.label}
+                    </Text>
+                ))}
+
+                {/* Ridge Peak Labels */}
+                {is2AguasNS && (
+                    <Text
+                        position={[width / 2, getPointHeight(width / 2, length / 2) + 0.3, length / 2]}
+                        fontSize={0.3}
+                        color="#0369a1"
+                        fontWeight="bold"
+                        backgroundColor="white"
+                        padding={0.08}
+                    >
+                        Pico: {getPointHeight(width / 2, length / 2).toFixed(2)}m
+                    </Text>
+                )}
+                {is2AguasEW && (
+                    <Text
+                        position={[width / 2, getPointHeight(width / 2, length / 2) + 0.3, length / 2]}
+                        fontSize={0.3}
+                        color="#0369a1"
+                        fontWeight="bold"
+                        backgroundColor="white"
+                        padding={0.08}
+                    >
+                        Pico: {getPointHeight(width / 2, length / 2).toFixed(2)}m
+                    </Text>
+                )}
+
+                {/* Base Dimensions Labels */}
+                <Text position={[width / 2, -0.2, length + 0.5]} fontSize={0.3} color="#94a3b8" rotation={[-Math.PI / 2, 0, 0]}>Frente: {width}m</Text>
+                <Text position={[width + 0.5, -0.2, length / 2]} fontSize={0.3} color="#94a3b8" rotation={[-Math.PI / 2, 0, Math.PI / 2]}>Largo: {length}m</Text>
+            </group>
         </group>
     );
 };
 
 const Viewer3D = () => {
-    const { dimensions, openings, facadeConfigs, interiorWalls, showBeams, showRoofPlates, project, addSnapshot, beamOffset, setBeamOffset } = useStore();
+    const {
+        dimensions = { width: 6, length: 8 },
+        openings = [],
+        facadeConfigs = {},
+        interiorWalls = [],
+        showBeams = true,
+        showRoofPlates = true,
+        project = {},
+        addSnapshot,
+        beamOffset = 0,
+        setBeamOffset
+    } = useStore();
     const canvasRef = React.useRef();
     const [captured, setCaptured] = React.useState(false);
 
@@ -401,10 +772,21 @@ const Viewer3D = () => {
                     alpha: false,
                     powerPreference: "high-performance"
                 }}
-                dpr={[1, 2]}
+                dpr={window.devicePixelRatio > 1 ? 2 : 1.5}
             >
-                <ambientLight intensity={0.8} />
-                <directionalLight position={[10, 20, 10]} intensity={1.2} castShadow shadow-mapSize={[2048, 2048]} shadow-camera-left={-20} shadow-camera-right={20} shadow-camera-top={20} shadow-camera-bottom={-20} />
+                <Environment preset="city" />
+                <ambientLight intensity={0.5} />
+                <directionalLight
+                    position={[15, 25, 15]}
+                    intensity={1.5}
+                    castShadow
+                    shadow-mapSize={[4096, 4096]}
+                    shadow-camera-left={-30}
+                    shadow-camera-right={30}
+                    shadow-camera-top={30}
+                    shadow-camera-bottom={-30}
+                    shadow-bias={-0.0001}
+                />
                 <HouseModel dimensions={dimensions} openings={openings} facadeConfigs={facadeConfigs} interiorWalls={interiorWalls} showBeams={showBeams} showRoofPlates={showRoofPlates} project={project} beamOffset={beamOffset} />
                 <OrbitControls makeDefault minPolarAngle={0} maxPolarAngle={Math.PI / 2.1} />
                 <ContactShadows opacity={0.25} scale={40} blur={2} far={10} position={[0, -0.01, 0]} />
